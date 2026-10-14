@@ -13,7 +13,8 @@
     "test": "node --test",
     "tunnel": ".tools/cloudflared tunnel --url http://localhost:3000",
     "check:replies": "node --env-file=.env scripts/check-replies.mjs",
-    "check:speed": "node --env-file=.env scripts/time-replies.mjs"
+    "check:speed": "node --env-file=.env scripts/time-replies.mjs",
+    "check:qloo": "node --env-file=.env scripts/check-qloo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
