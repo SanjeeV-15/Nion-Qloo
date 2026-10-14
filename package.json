@@ -1,0 +1,22 @@
+{
+  "name": "nion",
+  "version": "0.1.0",
+  "description": "Nion: a hands-free voice companion designed for ears, not screens.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file=.env server/index.js",
+    "test": "node --test",
+    "tunnel": ".tools/cloudflared tunnel --url http://localhost:3000",
+    "check:replies": "node --env-file=.env scripts/check-replies.mjs",
+    "check:speed": "node --env-file=.env scripts/time-replies.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
+    "express": "^5.3.0"
+  }
+}
