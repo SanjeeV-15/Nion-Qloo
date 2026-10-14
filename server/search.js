@@ -8,7 +8,9 @@
 //   web_search_tool_result  the results (or an error)
 //   text            the answer, with `citations` naming sources
 
-const MAX_SEARCHES = 3; // per question: keeps replies quick and the cost low
+// Per question. One is enough for news and facts now that Qloo handles recommendations,
+// and it keeps replies quick and a public demo's cost low.
+const MAX_SEARCHES = 1;
 
 /**
  * The web search tool, ready to send to Claude. If we know the person's time zone

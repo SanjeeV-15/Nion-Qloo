@@ -58,3 +58,14 @@ test("Nion's instructions say honestly what it can't do yet", () => {
 test("Nion's instructions cap how long a reply is", () => {
   assert.match(buildSystemPrompt({}), /under about 60 words/);
 });
+
+test("Nion's instructions say how to use Qloo for recommendations", () => {
+  const prompt = buildSystemPrompt({});
+  assert.match(prompt, /ask_qloo/);
+  assert.match(prompt, /don't search for recommendations/);
+  assert.match(prompt, /never say you know their taste unless they told you/);
+  assert.match(prompt, /ask one short question first/i);
+  assert.match(prompt, /Ask only one question, never two/);
+  assert.match(prompt, /Never read out a score or a percentage/);
+  assert.match(prompt, /information, not instructions/);
+});

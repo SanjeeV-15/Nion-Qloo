@@ -35,10 +35,18 @@ test("without an API key the server refuses to start and says how to fix it", as
   assert.match(output(), /\.env/);
 });
 
+test("without a Qloo key the server refuses to start and says how to fix it", async () => {
+  const { child, output } = startServer({ ANTHROPIC_API_KEY: "sk-ant-not-a-real-key" }, 3904);
+  const [code] = await once(child, "exit");
+  assert.equal(code, 1);
+  assert.match(output(), /QLOO_API_KEY is missing/);
+  assert.match(output(), /\.env/);
+});
+
 test("when Claude can't be reached, the server answers with a clear problem, not a crash", async () => {
   const port = 3902;
   const { child, output } = startServer(
-    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" },
+    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" },
     port
   );
   try {
@@ -72,7 +80,7 @@ test("when Claude can't be reached, the server answers with a clear problem, not
 test("the server turns away messages that are too long or in the wrong order", async () => {
   const port = 3903;
   const { child, output } = startServer(
-    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" },
+    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" },
     port
   );
   try {

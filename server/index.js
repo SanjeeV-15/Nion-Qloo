@@ -16,8 +16,16 @@ if (!process.env.ANTHROPIC_API_KEY) {
   );
   process.exit(1);
 }
+if (!process.env.QLOO_API_KEY) {
+  console.error(
+    "\nNion can't start: QLOO_API_KEY is missing.\n" +
+      "Open the .env file in this folder and put your Qloo hackathon key after QLOO_API_KEY=\n" +
+      "(see .env.example and the README).\n"
+  );
+  process.exit(1);
+}
 
-// Loaded after the key check so a missing key gives the message above.
+// Loaded after the key checks so a missing key gives the messages above.
 const { askNion } = await import("./brain.js");
 const { resolvePlace, describePlace, cleanPlacePart } = await import("./place.js");
 const { classifyFailure } = await import("./failure.js");
@@ -66,7 +74,10 @@ async function resolveLocation(raw) {
 
   if (Number.isFinite(raw.lat) && Number.isFinite(raw.lon)) {
     const place = await resolvePlace(claude, raw.lat, raw.lon);
-    return place ? { ...place, text: describePlace(place), fromGps: true } : { failed: true };
+    // Keep the numbers too: Qloo needs them to find things near the person.
+    return place
+      ? { ...place, text: describePlace(place), fromGps: true, coords: { lat: raw.lat, lon: raw.lon } }
+      : { failed: true };
   }
 
   if (typeof raw.text === "string") {
@@ -102,20 +113,21 @@ app.post("/api/chat", async (req, res) => {
     const place = await resolveLocation(location);
     if (place?.failed) return res.json({ needsLocation: true, locationFailed: true });
 
-    const { reply, sources, usage, needsLocation } = await askNion({
+    const { reply, sources, suggestions, usage, needsLocation } = await askNion({
       messages,
       context: { ...cleanContext(context), place: place?.text },
       location: place && !place.failed ? { city: place.city, region: place.region, country: place.country } : undefined,
+      coords: place?.coords,
     });
-    // A line per question, so you can see how much searching is going on (each
-    // search costs about a cent).
+    // A line per question, so you can see how much searching and Qloo asking is going on
+    // (each web search costs about a cent; Qloo allows 10,000 calls a month).
     console.log(
-      `Answered: ${usage.searches} search(es), ${usage.inputTokens} tokens in, ${usage.outputTokens} out` +
+      `Answered: ${usage.searches} search(es), ${usage.qlooCalls} Qloo ask(s), ${usage.inputTokens} tokens in, ${usage.outputTokens} out` +
         (usage.searchErrors.length ? `, search errors: ${usage.searchErrors.join(", ")}` : "")
     );
     if (needsLocation) return res.json({ needsLocation: true });
     // Tell the page which place was worked out from GPS, so it can say it and use it next time.
-    res.json({ reply, sources, place: place?.fromGps ? place.text : undefined });
+    res.json({ reply, sources, suggestions, place: place?.fromGps ? place.text : undefined });
   } catch (error) {
     console.error("Claude request failed:", error?.status ?? "", error?.message ?? error);
     res.status(502).json({ error: "I'm having trouble reaching my sources.", reason: classifyFailure(error) });

@@ -53,7 +53,7 @@ test("a failed search is reported and does not break anything", () => {
 test("the search tool is limited, and passes the time zone and any place we know", () => {
   const plain = searchTool({});
   assert.equal(plain.name, "web_search");
-  assert.ok(plain.max_uses <= 3);
+  assert.equal(plain.max_uses, 1);
   assert.equal(plain.user_location, undefined);
 
   const located = searchTool({ timeZone: "America/New_York" }, { city: "Miami", region: "Florida", country: "us" });
