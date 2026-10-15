@@ -459,8 +459,9 @@ test("saying 'use my location' shares the device location, and the place it work
   await tick();
   await finishSpeaking();
 
+  // Follow-ups keep sending the exact position, so they still get real walking times.
   await hear("and where is good for coffee");
-  assert.deepEqual(fetches[2].body.location, { text: "Brickell, Miami, Florida, US" });
+  assert.deepEqual(fetches[2].body.location, { lat: 25.7617, lon: -80.1918 });
 });
 
 test("if the person has already allowed location, Nion just uses it without asking", async () => {

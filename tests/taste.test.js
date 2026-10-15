@@ -351,3 +351,68 @@ test("what the picks were based on is reported for the screen", async () => {
   });
   assert.deepEqual(out.about, { kind: "place", likes: ["Radiohead", "Jazz"], only: ["Ramen restaurant"] });
 });
+
+// ---------- somewhere other than where the person is ----------
+
+const lisbonPlace = { lat: 38.7077, lon: -9.1366, city: "Lisbon" };
+
+test("'near' looks around a named place, not where the person is", async () => {
+  const qloo = pretendQloo();
+  const geocoded = [];
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place", near: "Lisbon" },
+    context: { coords: denver, coordsFrom: "gps", geocode: async (name) => (geocoded.push(name), lisbonPlace) },
+  });
+  assert.deepEqual(geocoded, ["Lisbon"]);
+  assert.deepEqual(qloo.asked.recommend[0].place, { lat: 38.7077, lon: -9.1366 });
+  assert.equal(qloo.asked.recommend[0].radiusM, 3500, "a wider circle around the middle of a city");
+  assert.match(out.text, /around the middle of Lisbon/);
+  assert.match(out.text, /give no walking times or distances/);
+});
+
+test("'near' works even when the person's own position is unknown", async () => {
+  const qloo = pretendQloo();
+  const out = await runAskQloo({ qloo, input: { kind: "place", near: "Lisbon" }, context: { geocode: async () => lisbonPlace } });
+  assert.equal(qloo.asked.recommend.length, 1);
+  assert.equal(out.suggestions.length, 1);
+  assert.doesNotMatch(out.text, /web search/);
+});
+
+test("a place Nion cannot find on the map is not guessed at", async () => {
+  const qloo = pretendQloo();
+  const out = await runAskQloo({ qloo, input: { kind: "place", near: "Atlantis" }, context: { coords: denver, geocode: async () => null } });
+  assert.equal(qloo.asked.recommend.length, 0, "no Qloo call is wasted");
+  assert.match(out.text, /could not find a place called "Atlantis"/);
+  assert.deepEqual(out.suggestions, []);
+});
+
+test("with no way to look places up, 'near' says it could not find it", async () => {
+  const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place", near: "Lisbon" }, context: { coords: denver } });
+  assert.match(out.text, /could not find a place called "Lisbon"/);
+});
+
+test("when the position is only the middle of a city, no distances are claimed", async () => {
+  const qloo = pretendQloo();
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place" },
+    context: { coords: { lat: 25.76, lon: -80.19 }, coordsFrom: "named", placeLabel: "Miami", timeZone: "America/New_York" },
+  });
+  assert.equal(out.suggestions[0].distance, undefined, "the card must not say how far it is from the middle of town");
+  assert.doesNotMatch(out.text, /minutes on foot/);
+  assert.match(out.text, /around the middle of Miami/);
+  assert.equal(qloo.asked.recommend[0].radiusM, 3500);
+});
+
+test("the person's exact position still gives walking times", async () => {
+  const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place" }, context: { coords: denver, coordsFrom: "gps", timeZone: "America/Denver" } });
+  assert.match(out.text, /minutes on foot/);
+  assert.doesNotMatch(out.text, /middle of/);
+});
+
+test("'near' is only for places, so a film request ignores it", async () => {
+  const qloo = pretendQloo();
+  await runAskQloo({ qloo, input: { kind: "movie", near: "Lisbon" }, context: { geocode: async () => { throw new Error("should not be called"); } } });
+  assert.equal(qloo.asked.recommend[0].place, undefined);
+});

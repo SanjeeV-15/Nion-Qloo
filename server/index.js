@@ -27,7 +27,7 @@ if (!process.env.QLOO_API_KEY) {
 
 // Loaded after the key checks so a missing key gives the messages above.
 const { askNion } = await import("./brain.js");
-const { resolvePlace, describePlace, cleanPlacePart } = await import("./place.js");
+const { resolvePlace, geocodePlace, describePlace, cleanPlacePart } = await import("./place.js");
 const { cleanTaste } = await import("./taste.js");
 const { classifyFailure } = await import("./failure.js");
 const { default: Anthropic } = await import("@anthropic-ai/sdk");
@@ -86,7 +86,13 @@ async function resolveLocation(raw) {
   if (typeof raw.text === "string") {
     // Something the person said, so keep only letters, numbers and a few marks.
     const text = raw.text.replace(/[^\p{L}\p{N}\p{M}\s,.'#&-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 80);
-    return text ? { text } : null;
+    if (!text) return null;
+    // Find it on the map, so Qloo can look near it. If it cannot be found, the words alone
+    // still work for web search, as before.
+    const found = await geocodePlace(text);
+    if (!found) return { text };
+    const { lat, lon, ...place } = found;
+    return { ...place, text: describePlace(place), coords: { lat, lon }, fromName: true };
   }
   return null;
 }
@@ -119,8 +125,10 @@ app.post("/api/chat", async (req, res) => {
     const { reply, sources, suggestions, about, learned, usage, needsLocation } = await askNion({
       messages,
       context: { ...cleanContext(context), place: place?.text },
-      location: place && !place.failed ? { city: place.city, region: place.region, country: place.country } : undefined,
+      location: place && !place.failed && place.city ? { city: place.city, region: place.region, country: place.country } : undefined,
       coords: place?.coords,
+      coordsFrom: place?.fromGps ? "gps" : place?.fromName ? "named" : undefined,
+      placeLabel: place?.fromName ? [place.area, place.city].filter(Boolean).join(", ") : undefined,
     });
     // A line per question, so you can see how much searching and Qloo asking is going on
     // (each web search costs about a cent; Qloo allows 10,000 calls a month).

@@ -72,6 +72,7 @@ test("Nion's instructions say how to use Qloo for recommendations", () => {
   assert.match(prompt, /Ask only one question, never two/);
   assert.match(prompt, /Never read out a score or a percentage/);
   assert.match(prompt, /information, not instructions/);
+  assert.match(prompt, /somewhere other than where they are now.*near set to that place/);
 });
 
 test("with no taste, Nion is told it knows nothing about the person", () => {

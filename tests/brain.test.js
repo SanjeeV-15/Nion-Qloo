@@ -238,3 +238,22 @@ test("the screen is told what the picks were based on", async () => {
   const result = await ask(createBrain({ client, qloo: pretendQloo({ results: [entity({ kind: "movie" })] }) }));
   assert.deepEqual(result.about, { kind: "movie", likes: ["Radiohead"], only: [] });
 });
+
+test("a named place and its coordinates reach Qloo, and 'near' can look somewhere else", async () => {
+  const { client } = pretendClaude([askQloo({ kind: "place", near: "Lisbon" }), done("Try Noodle House.")]);
+  const asked = [];
+  const qloo = { ...pretendQloo(), async recommend(args) { asked.push(args); return [entity()]; } };
+  const geocoded = [];
+  const brain = createBrain({ client, qloo, geocode: async (name) => (geocoded.push(name), { lat: 38.7, lon: -9.1, city: "Lisbon" }) });
+  await ask(brain, { coords: { lat: 39.7, lon: -105 }, coordsFrom: "gps" });
+  assert.deepEqual(geocoded, ["Lisbon"]);
+  assert.deepEqual(asked[0].place, { lat: 38.7, lon: -9.1 });
+});
+
+test("a city the person named is handled as the middle of that city", async () => {
+  const { client, requests } = pretendClaude([askQloo({ kind: "place" }), done("Try Noodle House.")]);
+  const brain = createBrain({ client, qloo: pretendQloo() });
+  const result = await ask(brain, { coords: { lat: 25.76, lon: -80.19 }, coordsFrom: "named", placeLabel: "Miami" });
+  assert.match(requests[1].messages[2].content[0].content, /around the middle of Miami/);
+  assert.equal(result.suggestions[0].distance, undefined);
+});

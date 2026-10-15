@@ -3,6 +3,7 @@
 //   npm run check:taste             runs every group
 //   npm run check:taste -- memory   runs only the taste-memory group (slice 3)
 //   npm run check:taste -- basics   runs only the recommendation basics (slice 2)
+//   npm run check:taste -- location runs only the location group (slice 5)
 //   npm run check:taste -- memory 5 runs only the fifth question of that group
 //
 // THIS SPENDS ANTHROPIC CREDIT: about eight questions on Haiku 5.5 is a couple of cents.
@@ -10,6 +11,7 @@
 // It prints no keys and saves nothing.
 
 import { askNion } from "../server/brain.js";
+import { geocodePlace, describePlace } from "../server/place.js";
 
 const denver = { lat: 39.7392, lon: -104.9903 };
 const now = new Date();
@@ -30,6 +32,13 @@ const DEMO = [
   { name: "Blade Runner 2049", kind: "movie", opinion: "like" },
   { name: "jazz", kind: "genre", opinion: "like" },
 ];
+
+// For the location group: how far (in km) a pick must be from a place to count as "near" it.
+const km = (a, b) => {
+  const rad = (d) => (d * Math.PI) / 180;
+  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+};
 
 // What each question should do. `qloo` is how many Qloo asks to expect: a number, or "any>0".
 // `learned` is a regex that must match one learned taste written as "like ramen"; `noLearned` means none.
@@ -83,6 +92,23 @@ const cases = [
     group: "memory", taste: DEMO, say: "What do you know about my taste?",
     expect: "repeats exactly the demo items, nothing extra", qloo: 0, mustMatch: /ramen/i, mustNotMatch: /sushi|tacos|pizza|coffee/i,
   },
+
+  // ----- slice 5: a city the person says, and looking somewhere else -----
+  // `city` means the person said where they are, so the server would have found it on the map.
+  {
+    group: "location", city: "Lisbon", taste: [], say: "I love ramen. Where can I eat around here?",
+    expect: "ramen places in Lisbon, and no walking times or distances (only the city's middle is known)",
+    qloo: "any>0", nearCity: { lat: 38.72, lon: -9.14, withinKm: 15 }, mustNotMatch: /minutes? on foot|\bwalk|miles?\b|kilomet/i,
+  },
+  {
+    group: "location", city: "Miami", taste: [], say: "Any good tacos near me?",
+    expect: "taco places in Miami, no distances", qloo: "any>0", nearCity: { lat: 25.77, lon: -80.19, withinKm: 25 },
+    mustNotMatch: /minutes? on foot|\bwalk|miles?\b|kilomet/i,
+  },
+  {
+    group: "location", taste: [], say: "I love ramen. What's good to eat if I go to Tokyo next month?",
+    expect: "uses 'near Tokyo' even though the person is in Denver", qloo: "any>0", nearCity: { lat: 35.68, lon: 139.76, withinKm: 25 },
+  },
 ];
 
 const only = process.argv[2];
@@ -90,7 +116,7 @@ const inGroup = only ? cases.filter((c) => c.group === only) : cases;
 const number = Number(process.argv[3]);
 const chosen = Number.isInteger(number) && number >= 1 ? inGroup.slice(number - 1, number) : inGroup;
 if (chosen.length === 0) {
-  console.log(`No group called "${only}". Use basics or memory.`);
+  console.log(`No group called "${only}". Use basics, memory or location.`);
   process.exit(1);
 }
 
@@ -109,13 +135,29 @@ for (const c of chosen) {
   const started = Date.now();
   const messages = c.messages ?? [{ role: "user", content: c.say }];
   const asked = messages.at(-1).content;
+  // The person is in Denver (exact GPS), unless the case says they named a city.
+  let where = { context: baseContext, location, coords: denver, coordsFrom: "gps", placeLabel: undefined };
+  if (c.city) {
+    const found = await geocodePlace(c.city);
+    if (!found) { failed += 1; console.log(`\n"${c.say}"\n  FAILED: could not find ${c.city} on the map`); continue; }
+    const { lat, lon, ...place } = found;
+    where = {
+      context: { ...baseContext, place: describePlace(place) },
+      location: { city: place.city, region: place.region, country: place.country },
+      coords: { lat, lon },
+      coordsFrom: "named",
+      placeLabel: [place.area, place.city].filter(Boolean).join(", "),
+    };
+  }
   let result;
   try {
     result = await askNion({
       messages,
-      context: { ...baseContext, taste: c.taste ?? [], isNewConversation: messages.length === 1 },
-      location,
-      coords: denver,
+      context: { ...where.context, taste: c.taste ?? [], isNewConversation: messages.length === 1 },
+      location: where.location,
+      coords: where.coords,
+      coordsFrom: where.coordsFrom,
+      placeLabel: where.placeLabel,
     });
   } catch (error) {
     failed += 1;
@@ -136,6 +178,11 @@ for (const c of chosen) {
   if (c.mustNotMatch && c.mustNotMatch.test(result.reply)) issues.push(`reply should not match ${c.mustNotMatch}`);
   if (c.learned && !learned.some((l) => c.learned.test(l))) issues.push(`should have saved something like ${c.learned}`);
   if (c.notLearned && learned.some((l) => c.notLearned.test(l))) issues.push(`should not have saved ${learned.filter((l) => c.notLearned.test(l)).join(", ")}`);
+  if (c.nearCity) {
+    const first = result.suggestions.find((p) => p.location);
+    if (!first) issues.push("no pick with a position to check");
+    else if (km(first.location, c.nearCity) > c.nearCity.withinKm) issues.push(`first pick is ${Math.round(km(first.location, c.nearCity))} km from where it should be`);
+  }
   if (c.noSushi && result.suggestions.some((s) => /sushi/i.test(`${s.name} ${(s.tags ?? []).join(" ")}`))) issues.push("suggested a sushi place after 'no sushi'");
   if (issues.length) failed += 1;
 

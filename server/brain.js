@@ -14,6 +14,7 @@ import { buildSystemPrompt } from "./prompt.js";
 import { searchTool, pickSpokenText, collectSources, searchErrors } from "./search.js";
 import { askQlooTool, runAskQloo, ASK_QLOO, rememberTasteTool, runRememberTaste, REMEMBER_TASTE, spokenSuggestions } from "./taste.js";
 import { createQloo } from "./qloo.js";
+import { geocodePlace } from "./place.js";
 
 // Which Claude model to use. Haiku 5.5 is cheap and quick, which suits a voice app and a
 // public demo. Change NION_MODEL in .env to try another one (for example claude-sonnet-5-5).
@@ -32,19 +33,21 @@ const NEED_LOCATION = "[[NEED_LOCATION]]";
  * Makes the brain. `client` is the Claude client and `qloo` is the helper from createQloo;
  * both can be pretend ones in tests, which is how Nion's flow is checked without spending money.
  */
-export function createBrain({ client, qloo, model: defaultModel = process.env.NION_MODEL || DEFAULT_MODEL }) {
+export function createBrain({ client, qloo, geocode = geocodePlace, model: defaultModel = process.env.NION_MODEL || DEFAULT_MODEL }) {
   /**
    * Ask Claude for Nion's reply.
    *   messages: the conversation so far, [{ role: "user" | "assistant", content: "..." }]
    *   context:  details from the person's browser (date, time, time zone, name)
    *   location: optional { city, region, country } to localize searches
-   *   coords:   optional { lat, lon }, the person's GPS position, for places near them
+   *   coords:   optional { lat, lon }, where the person is, for places near them
+   *   coordsFrom: "gps" if coords is their exact position, "named" if it is the middle of a city they named
+   *   placeLabel: the name of that city, when coordsFrom is "named"
    * Returns { reply, sources, suggestions, about, learned, searches, usage } where reply is the
    * text Nion should speak, sources are the pages it used ([{ title, url }]), suggestions are
    * the Qloo picks Nion actually said (ready to list on screen), about says what they were based
    * on ({ kind, likes, only }) and learned is any new taste the person stated, for the page to save.
    */
-  return async function askNion({ messages, context, location, coords, model = defaultModel }) {
+  return async function askNion({ messages, context, location, coords, coordsFrom, placeLabel, model = defaultModel }) {
     let thread = messages;
     let response;
     let searches = 0;
@@ -100,7 +103,7 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
           const outcome = await runAskQloo({
             qloo,
             input: block.input,
-            context: { coords, timeZone: context?.timeZone },
+            context: { coords, coordsFrom, placeLabel, timeZone: context?.timeZone, geocode },
           });
           if (outcome.suggestions.length > 0) {
             suggestions = outcome.suggestions;

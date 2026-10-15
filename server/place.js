@@ -6,12 +6,33 @@
 // is what makes "near me" mean near me. If that is unreachable, a small, fast
 // Claude model names just the city, state and country instead.
 //
+// It also works the other way: a place the person says or types ("Lisbon", "Brickell,
+// Miami") is looked up to get coordinates, because Qloo finds things near a point on the map.
+//
 // Nominatim's rules (https://operations.osmfoundation.org/policies/nominatim/): no
-// more than one request a second, and an identifying User-Agent. Nion looks up one
-// place a person, remembers each answer, and waits between requests.
+// more than one request a second, and an identifying User-Agent. Nion remembers each
+// answer and waits its turn between requests, so several people at once stay polite.
+
+// Tests point this at a pretend server.
+const NOMINATIM = process.env.NOMINATIM_URL || "https://nominatim.openstreetmap.org";
+const MAX_REMEMBERED = 500;
 
 const cache = new Map();
-let lastRequestAt = 0;
+const geocodeCache = new Map();
+let nextSlot = 0;
+
+// Takes the next free slot, at least 1.1 seconds after the last one. Slots are reserved before
+// waiting, so two lookups arriving together do not both go at once.
+async function politeWait(sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) {
+  const at = Math.max(Date.now(), nextSlot);
+  nextSlot = at + 1100;
+  if (at > Date.now()) await sleep(at - Date.now());
+}
+
+function remember(map, key, value) {
+  if (map.size >= MAX_REMEMBERED) map.delete(map.keys().next().value);
+  map.set(key, value);
+}
 
 /** Keep a place word safe to put into Nion's instructions: letters and a few marks. */
 export function cleanPlacePart(value, max = 60) {
@@ -52,12 +73,8 @@ export function describePlace(place) {
 }
 
 async function fromNominatim(lat, lon) {
-  // Be polite: at least a second between requests.
-  const wait = lastRequestAt + 1100 - Date.now();
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastRequestAt = Date.now();
-
-  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&addressdetails=1&lat=${lat}&lon=${lon}`;
+  await politeWait();
+  const url = `${NOMINATIM}/reverse?format=jsonv2&zoom=17&addressdetails=1&lat=${lat}&lon=${lon}`;
   const response = await fetch(url, {
     headers: { "User-Agent": "Nion/0.1 (hackathon demo; github.com/SanjeeV-15)" },
     signal: AbortSignal.timeout(4000),
@@ -111,6 +128,55 @@ export async function resolvePlace(client, lat, lon) {
     }
   }
 
-  if (place) cache.set(key, place);
+  if (place) remember(cache, key, place);
+  return place;
+}
+
+/**
+ * Reads Nominatim's answer to a search into { lat, lon, area?, city, region?, country? }, or
+ * null if it found nothing usable. Nominatim sends the coordinates as text, so they are checked.
+ */
+export function placeFromSearch(json) {
+  const hit = Array.isArray(json) ? json[0] : null;
+  const lat = Number(hit?.lat);
+  const lon = Number(hit?.lon);
+  if (!hit || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+
+  // A search for a whole country or region has no "city", so fall back to the name it matched.
+  const named = placeFromNominatim(hit) ?? {};
+  const city = named.city ?? cleanPlacePart(hit.name ?? String(hit.display_name ?? "").split(",")[0]);
+  if (!city) return null;
+  return { lat, lon, area: named.area, city, region: named.region, country: named.country };
+}
+
+/**
+ * Finds a place the person said or typed, and where it is on the map. Returns
+ * { lat, lon, area?, city, region?, country? }, or null if it could not be found.
+ * `fetchImpl` and `sleep` can be swapped for pretend ones in tests.
+ */
+export async function geocodePlace(text, { fetchImpl = fetch, sleep } = {}) {
+  const query = typeof text === "string" ? text.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+  if (!query) return null;
+
+  const key = query.toLowerCase();
+  if (geocodeCache.has(key)) return geocodeCache.get(key);
+
+  let place = null;
+  try {
+    await politeWait(sleep);
+    const url = `${NOMINATIM}/search?format=jsonv2&limit=1&addressdetails=1&q=${encodeURIComponent(query)}`;
+    const response = await fetchImpl(url, {
+      headers: { "User-Agent": "Nion/0.1 (hackathon demo; github.com/SanjeeV-15)" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) throw new Error(`Nominatim said ${response.status}`);
+    place = placeFromSearch(await response.json());
+  } catch (error) {
+    console.error("Place search (OpenStreetMap) failed:", error?.message ?? error);
+    return null; // not remembered: it may work next time
+  }
+
+  // A search that found nothing is remembered too, so a made-up place is not looked up again and again.
+  remember(geocodeCache, key, place);
   return place;
 }

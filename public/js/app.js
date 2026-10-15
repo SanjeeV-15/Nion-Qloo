@@ -146,9 +146,11 @@ let conversationId = null; // which saved conversation (for History) the next an
 let nameTries = 0;
 
 // Where the person is, once we know. It is remembered until the page is closed,
-// so Nion doesn't ask again. `pending` is the question that was waiting for a
+// so Nion doesn't ask again. `gps` is their exact position, if they shared it: it is kept
+// (in memory only) so follow-up questions still get real walking times. `place` is a name,
+// said, typed or worked out from GPS. `pending` is the question that was waiting for a
 // location, asked again as soon as we have one.
-const known = { place: null };
+const known = { place: null, gps: null };
 let pending = null;
 // True while the browser's "Allow location?" pop-up is open. Anything heard then is
 // Nion's own voice or the person talking to the pop-up, not a new question.
@@ -499,6 +501,7 @@ async function askForLocation(question, oneShot, lookupFailed = false) {
 // The person said where they are: remember it and ask the waiting question again.
 async function rememberPlace(place) {
   known.place = place;
+  known.gps = null; // they said somewhere else: that is where they are now
   session.awaiting = null;
   const waiting = pending;
   pending = null;
@@ -517,6 +520,7 @@ async function useDeviceLocation() {
     const gps = await getDevicePosition();
     if (mine !== turn) return; // stopped while the pop-up was open
     locating = false;
+    known.gps = gps;
     const waiting = pending;
     pending = null;
     return ask(waiting.question, waiting.oneShot, gps);
@@ -645,8 +649,8 @@ async function ask(question, oneShot, gps) {
         // In a started conversation Nion has already greeted you, so only a
         // one-shot question counts as "new" (and gets a greeting by name).
         context: currentContext(oneShot),
-        // Fresh GPS numbers, or the place we already know, or nothing.
-        location: gps ?? (known.place ? { text: known.place } : undefined),
+        // Fresh GPS numbers, or the ones shared earlier, or a place we know by name, or nothing.
+        location: gps ?? known.gps ?? (known.place ? { text: known.place } : undefined),
       }),
     });
     if (!response.ok) {
