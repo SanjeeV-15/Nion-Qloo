@@ -3,6 +3,7 @@
 //   npm run check:taste             runs every group
 //   npm run check:taste -- memory   runs only the taste-memory group (slice 3)
 //   npm run check:taste -- basics   runs only the recommendation basics (slice 2)
+//   npm run check:taste -- memory 5 runs only the fifth question of that group
 //
 // THIS SPENDS ANTHROPIC CREDIT: about eight questions on Haiku 5.5 is a couple of cents.
 // It prints an estimate at the end. It also uses a few of Qloo's 10,000 monthly calls.
@@ -72,7 +73,7 @@ const cases = [
       { role: "assistant", content: "You like ramen. Want ramen places near you?" },
       { role: "user", content: "No, not ramen today." },
     ],
-    expect: "takes the no gracefully, saves 'dislike ramen' or asks what they want instead", question: true, learned: /^dislike .*ramen/i,
+    expect: "takes the no gracefully and asks what they want instead; 'not today' is not a dislike, so nothing is saved", question: true, notLearned: /^dislike/i,
   },
   {
     group: "memory", taste: [], say: "What do you know about my taste?",
@@ -85,7 +86,9 @@ const cases = [
 ];
 
 const only = process.argv[2];
-const chosen = only ? cases.filter((c) => c.group === only) : cases;
+const inGroup = only ? cases.filter((c) => c.group === only) : cases;
+const number = Number(process.argv[3]);
+const chosen = Number.isInteger(number) && number >= 1 ? inGroup.slice(number - 1, number) : inGroup;
 if (chosen.length === 0) {
   console.log(`No group called "${only}". Use basics or memory.`);
   process.exit(1);
@@ -132,6 +135,7 @@ for (const c of chosen) {
   if (c.mustMatch && !c.mustMatch.test(result.reply)) issues.push(`reply should match ${c.mustMatch}`);
   if (c.mustNotMatch && c.mustNotMatch.test(result.reply)) issues.push(`reply should not match ${c.mustNotMatch}`);
   if (c.learned && !learned.some((l) => c.learned.test(l))) issues.push(`should have saved something like ${c.learned}`);
+  if (c.notLearned && learned.some((l) => c.notLearned.test(l))) issues.push(`should not have saved ${learned.filter((l) => c.notLearned.test(l)).join(", ")}`);
   if (c.noSushi && result.suggestions.some((s) => /sushi/i.test(`${s.name} ${(s.tags ?? []).join(" ")}`))) issues.push("suggested a sushi place after 'no sushi'");
   if (issues.length) failed += 1;
 

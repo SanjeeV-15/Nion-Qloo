@@ -66,6 +66,8 @@ test("Nion's instructions say how to use Qloo for recommendations", () => {
   assert.match(prompt, /Only ever say you know something about their taste if it is in that list/);
   assert.match(prompt, /remember_taste/);
   assert.match(prompt, /Never note your own guesses/);
+  assert.match(prompt, /"not today" or "something else" only means not now, so don't note it/);
+  assert.match(prompt, /Note a dislike only when they say they don't like it/);
   assert.match(prompt, /ask one short question first/i);
   assert.match(prompt, /Ask only one question, never two/);
   assert.match(prompt, /Never read out a score or a percentage/);
