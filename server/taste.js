@@ -197,6 +197,42 @@ export function presentResult(entity, timeZone) {
   };
 }
 
+// Lower case, no accents, no punctuation: so "Sample Ramen & Poke" matches however it is said.
+const plain = (text) =>
+  String(text ?? "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " and ") // said aloud, "Ramen & Poke" is "Ramen and Poke"
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+// "SAMPLE Ramen Bar - Union Station" is usually said as "Sample Ramen Bar", so the part
+// before a dash, colon or bracket counts as the name too.
+function nameVariants(name) {
+  const short = plain(String(name).split(/\s[-\u2013\u2014:(]/)[0]);
+  return [...new Set([plain(name), short])].filter((variant) => variant.length >= 3);
+}
+
+/**
+ * Keeps only the suggestions Nion actually said, in the order it said them, so the list on
+ * screen matches what the person heard. Names are matched whole-word. If Nion named none of
+ * them (it said nothing fit, say), nothing is shown rather than something it did not say.
+ */
+export function spokenSuggestions(reply, suggestions) {
+  const spoken = ` ${plain(reply)} `;
+  return (Array.isArray(suggestions) ? suggestions : [])
+    .map((suggestion) => {
+      const positions = nameVariants(suggestion.name)
+        .map((variant) => spoken.indexOf(` ${variant} `))
+        .filter((position) => position >= 0);
+      return { suggestion, at: positions.length ? Math.min(...positions) : -1 };
+    })
+    .filter((entry) => entry.at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .map((entry) => entry.suggestion);
+}
+
 function describeForClaude(item, number) {
   const parts = [
     item.name,
@@ -331,7 +367,9 @@ export async function runAskQloo({ qloo, input, context = {} }) {
       ...notes,
     ].join("\n");
 
-    return { text, suggestions, isError: false };
+    // What these picks were based on, so the screen can say so honestly.
+    const about = { kind, likes: [...likeNames, ...tasteNames], only: onlyNames };
+    return { text, suggestions, about, isError: false };
   } catch (error) {
     if (error instanceof QlooError) {
       const hint =

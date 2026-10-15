@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   runAskQloo, askQlooTool, matchWord, distanceWords, presentResult,
-  cleanTasteWord, cleanTasteItem, cleanTaste, rememberTasteTool, runRememberTaste, TASTE_KINDS,
+  cleanTasteWord, cleanTasteItem, cleanTaste, rememberTasteTool, runRememberTaste, TASTE_KINDS, spokenSuggestions,
 } from "../server/taste.js";
 import { QlooError } from "../server/qloo.js";
 
@@ -304,4 +304,50 @@ test("remembering returns the checked taste, or says it could not", () => {
   const bad = runRememberTaste({ name: "", kind: "genre" });
   assert.equal(bad.learned, null);
   assert.match(bad.text, /could not be saved/);
+});
+
+// ---------- keeping the list on screen to what Nion said ----------
+
+const named = (...names) => names.map((name, i) => ({ id: String(i), name }));
+
+test("the list is cut down to what was said, in the order it was said", () => {
+  const picks = named("Alpha Cafe", "Beta Bistro", "Gamma Grill");
+  const shown = spokenSuggestions("Gamma Grill is nearest, then Alpha Cafe.", picks);
+  assert.deepEqual(shown.map((p) => p.name), ["Gamma Grill", "Alpha Cafe"]);
+});
+
+test("names match however they are capitalised, accented or punctuated", () => {
+  const picks = named("Sample Ramen & Poke", "Café Brontë");
+  assert.deepEqual(spokenSuggestions("Sample ramen and poke is mid-range.", picks).map((p) => p.name), ["Sample Ramen & Poke"], "'&' is said as 'and'");
+  assert.deepEqual(spokenSuggestions("Try CAFE BRONTE, then Sample Ramen and Poke.", picks).map((p) => p.name), ["Café Brontë", "Sample Ramen & Poke"]);
+});
+
+test("a long name is matched by the part before a dash, as it is usually said", () => {
+  const picks = named("SAMPLE Ramen Bar - Union Station");
+  assert.equal(spokenSuggestions("Sample Ramen Bar is a good pick.", picks).length, 1);
+});
+
+test("a short name is not matched inside a longer word", () => {
+  const picks = named("Moon");
+  assert.equal(spokenSuggestions("Try Moonlight instead.", picks).length, 0);
+  assert.equal(spokenSuggestions("Try Moon, it's slow and eerie.", picks).length, 1);
+});
+
+test("if nothing was said, nothing is listed", () => {
+  assert.deepEqual(spokenSuggestions("Want me to try something else?", named("Alpha Cafe")), []);
+  assert.deepEqual(spokenSuggestions("Anything.", []), []);
+  assert.deepEqual(spokenSuggestions("Anything.", undefined), []);
+});
+
+test("what the picks were based on is reported for the screen", async () => {
+  const qloo = pretendQloo({
+    entities: { Radiohead: "ART-1" },
+    tags: { ramen: [{ id: "urn:tag:genre:place:restaurant:ramen", name: "Ramen restaurant" }], jazz: [{ id: "urn:tag:genre:media:jazz", name: "Jazz" }] },
+  });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }], tastes: ["ramen", "jazz"] },
+    context: { coords: denver },
+  });
+  assert.deepEqual(out.about, { kind: "place", likes: ["Radiohead", "Jazz"], only: ["Ramen restaurant"] });
 });

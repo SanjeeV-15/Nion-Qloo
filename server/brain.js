@@ -12,7 +12,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./prompt.js";
 import { searchTool, pickSpokenText, collectSources, searchErrors } from "./search.js";
-import { askQlooTool, runAskQloo, ASK_QLOO, rememberTasteTool, runRememberTaste, REMEMBER_TASTE } from "./taste.js";
+import { askQlooTool, runAskQloo, ASK_QLOO, rememberTasteTool, runRememberTaste, REMEMBER_TASTE, spokenSuggestions } from "./taste.js";
 import { createQloo } from "./qloo.js";
 
 // Which Claude model to use. Haiku 5.5 is cheap and quick, which suits a voice app and a
@@ -39,10 +39,10 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
    *   context:  details from the person's browser (date, time, time zone, name)
    *   location: optional { city, region, country } to localize searches
    *   coords:   optional { lat, lon }, the person's GPS position, for places near them
-   * Returns { reply, sources, suggestions, learned, searches, usage } where reply is the text Nion
-   * should speak, sources are the pages it used ([{ title, url }]), suggestions are what Qloo
-   * recommended (ready to list on screen) and learned is any new taste the person stated,
-   * for the page to save.
+   * Returns { reply, sources, suggestions, about, learned, searches, usage } where reply is the
+   * text Nion should speak, sources are the pages it used ([{ title, url }]), suggestions are
+   * the Qloo picks Nion actually said (ready to list on screen), about says what they were based
+   * on ({ kind, likes, only }) and learned is any new taste the person stated, for the page to save.
    */
   return async function askNion({ messages, context, location, coords, model = defaultModel }) {
     let thread = messages;
@@ -52,6 +52,7 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
     let inputTokens = 0;
     let outputTokens = 0;
     let suggestions = [];
+    let about = null;
     const learned = [];
     const sources = new Map();
     const errors = [];
@@ -101,7 +102,10 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
             input: block.input,
             context: { coords, timeZone: context?.timeZone },
           });
-          if (outcome.suggestions.length > 0) suggestions = outcome.suggestions;
+          if (outcome.suggestions.length > 0) {
+            suggestions = outcome.suggestions;
+            about = outcome.about ?? null;
+          }
           results.push({ type: "tool_result", tool_use_id: block.id, content: outcome.text, ...(outcome.isError ? { is_error: true } : {}) });
         }
         thread = [...thread, { role: "assistant", content: response.content }, { role: "user", content: results }];
@@ -139,10 +143,12 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
       return { needsLocation: true, reply: "", sources: [], suggestions: [], learned, searches, usage };
     }
 
+    const spoken = spokenSuggestions(reply, suggestions);
     return {
       reply: reply || "Sorry, I didn't catch that. Could you say it again?",
       sources: [...sources.values()].slice(0, 8),
-      suggestions,
+      suggestions: spoken,
+      about: spoken.length ? about : null,
       learned,
       searches,
       usage,

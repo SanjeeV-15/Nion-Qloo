@@ -116,6 +116,7 @@ function makeElement() {
     textContent: "",
     hidden: false,
     dataset: {},
+    children: [],
     setAttribute() {},
     handlers: {},
     addEventListener(type, handler) {
@@ -124,11 +125,17 @@ function makeElement() {
     click() {
       return this.handlers.click();
     },
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+    replaceChildren() {
+      this.children = [];
+    },
   };
 }
 
 let appVersion = 0;
-async function startApp({ name, search = "" } = {}) {
+async function startApp({ name, search = "", voice = true } = {}) {
   for (const entry of scheduled) realClearTimeout(entry.timer); // timers of an earlier test
   scheduled.clear();
   storage = new Map();
@@ -145,13 +152,22 @@ async function startApp({ name, search = "" } = {}) {
   globalThis.location = { search };
   globalThis.document = {
     getElementById: (id) => (elements[id] ??= makeElement()),
+    createElement: () => makeElement(),
     addEventListener: (type, handler) => (pageHandlers[type] = handler),
   };
   // A fresh copy of the app each time (the ?number makes Node load it again).
   await import(`../public/js/app.js?run=${++appVersion}`);
   // Don't wait for the click to finish: Nion starts speaking, and the pretend
   // voice only finishes when a test says so.
-  elements.start.click();
+  // With voice: false the person never taps "Turn on Nion", so only typing is available.
+  if (voice) elements.start.click();
+  await tick();
+}
+
+// Pretend the person typed a question into the box and pressed Send.
+async function typeIn(text) {
+  elements["typed-input"].value = text;
+  elements.typed.handlers.submit({ preventDefault() {} });
   await tick();
 }
 
@@ -740,4 +756,119 @@ test("Nion's own 'one moment', written into the same phrase as yours, is not tak
   await finishSpeaking();
   await tick();
   assert.match(saidSoFar(), /According to Reuters/);
+});
+
+// ---------- typing to Nion ----------
+
+const iconState = () => elements.orb.dataset.state;
+const picksShown = () => elements.picks.hidden === false && elements["picks-list"].children.length;
+
+test("typing works with voice off: the answer appears as text, nothing is spoken", async () => {
+  await startApp({ name: "Sanjeev", voice: false });
+  assert.match(status(), /Type a question below/);
+
+  await typeIn("what time is it in Denver");
+  assert.equal(fetches.length, 1);
+  assert.equal(fetches[0].body.messages.at(-1).content, "what time is it in Denver");
+  assert.equal(fetches[0].body.context.isNewConversation, true);
+  assert.equal(iconState(), "thinking");
+  assert.equal(elements["you-said"].textContent, "You: what time is it in Denver");
+
+  fetches[0].reply("Hey Sanjeev, it's one seventeen in Denver.");
+  await tick();
+  assert.equal(elements.reply.textContent, "Hey Sanjeev, it's one seventeen in Denver.");
+  assert.equal(elements["reply-card"].hidden, false);
+  assert.deepEqual(spoken, [], "nothing is read aloud when voice is off");
+  assert.equal(iconState(), "off", "the icon goes back to resting");
+});
+
+test("typing with voice on is answered in text and out loud", async () => {
+  await startApp({ name: "Sanjeev" });
+  await finishSpeaking();
+  await typeIn("what time is it in Denver");
+  fetches[0].reply("It's one seventeen.");
+  await tick();
+  assert.equal(elements.reply.textContent, "It's one seventeen.");
+  assert.match(spoken.at(-1), /one seventeen/);
+});
+
+test("typed follow-ups carry on the same conversation, and it is not wiped after the voice window", async () => {
+  await startApp({ name: "Sanjeev", voice: false });
+  await typeIn("I love ramen. Where should I eat?");
+  fetches[0].reply("Try Sample Bar.");
+  await tick();
+
+  firePending(15000); // the voice follow-up window would close now, but there is no voice
+  await typeIn("and for dessert?");
+  assert.equal(fetches.length, 2);
+  assert.equal(fetches[1].body.context.isNewConversation, false);
+  assert.deepEqual(
+    fetches[1].body.messages.map((m) => m.role),
+    ["user", "assistant", "user"]
+  );
+});
+
+test("what Nion suggested is listed under the answer, and cleared by the next question", async () => {
+  await startApp({ voice: false });
+  await typeIn("music like Radiohead");
+  fetches[0].respond({
+    reply: "Try Sample Artist One and Sample Artist Two.",
+    suggestions: [{ name: "Sample Artist One", fit: "an excellent fit" }, { name: "Sample Artist Two" }],
+    about: { kind: "artist", likes: ["Radiohead"], only: [] },
+  });
+  await tick();
+  assert.equal(picksShown(), 2);
+  assert.equal(elements["picks-title"].textContent, "Music");
+  assert.equal(elements["picks-because"].textContent, "Because you like Radiohead");
+
+  await typeIn("and films?");
+  assert.equal(elements.picks.hidden, true, "the old list is gone while the new question is answered");
+});
+
+test("an answer with no suggestions shows no list", async () => {
+  await startApp({ voice: false });
+  await typeIn("what time is it");
+  fetches[0].reply("Noon.");
+  await tick();
+  assert.equal(elements.picks.hidden, true);
+});
+
+test("typing a new question while Nion is still thinking cancels the old one", async () => {
+  await startApp({ voice: false });
+  await typeIn("first question");
+  await typeIn("second question");
+  assert.equal(fetches[0].aborted, true);
+  assert.equal(fetches.length, 2);
+  fetches[1].reply("Answer to the second.");
+  await tick();
+  assert.equal(elements.reply.textContent, "Answer to the second.");
+  assert.equal(iconState(), "off");
+});
+
+test("when Nion needs a location, a typed place is accepted and the question is asked again", async () => {
+  await startApp({ voice: false });
+  await typeIn("where should I eat around here?");
+  fetches[0].needLocation();
+  await tick();
+  assert.match(elements.reply.textContent, /can't tell where you are/i);
+
+  await typeIn("Miami");
+  assert.equal(fetches.length, 2);
+  assert.deepEqual(fetches[1].body.location, { text: "Miami" });
+  assert.equal(fetches[1].body.messages.at(-1).content, "where should I eat around here?");
+});
+
+test("a failed typed question shows the trouble message and settles", async () => {
+  await startApp({ voice: false });
+  await typeIn("anything");
+  fetches[0].serverError("busy");
+  await tick();
+  assert.match(elements.reply.textContent, /trouble reaching my sources/i);
+  assert.equal(iconState(), "off");
+});
+
+test("an empty box sends nothing", async () => {
+  await startApp({ voice: false });
+  await typeIn("   ");
+  assert.equal(fetches.length, 0);
 });

@@ -96,7 +96,7 @@ test("Claude asks Qloo, gets the results back, and answers", async () => {
 });
 
 test("what Qloo recommended is returned for the screen", async () => {
-  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Here you go.")]);
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Try Noodle House, it's close.")]);
   const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 39.7, lon: -105 } });
   assert.equal(result.suggestions.length, 1);
   assert.equal(result.suggestions[0].name, "Noodle House");
@@ -181,13 +181,13 @@ test("Claude can note a taste and ask Qloo in the same step", async () => {
       ],
       usage: {},
     },
-    done("Sample Noodle Bar is close."),
+    done("Noodle House is close."),
   ]);
   const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 39.7, lon: -105 } });
 
   assert.deepEqual(result.learned, [{ name: "ramen", kind: "food", opinion: "like" }]);
   assert.equal(result.suggestions.length, 1);
-  assert.equal(result.reply, "Sample Noodle Bar is close.");
+  assert.equal(result.reply, "Noodle House is close.");
   // Both answers go back together, in one step, so there is only one extra round trip.
   assert.equal(requests.length, 2);
   assert.deepEqual(requests[1].messages[2].content.map((c) => c.tool_use_id), ["toolu_r", "toolu_q"]);
@@ -214,4 +214,27 @@ test("only a few tastes can be saved from one question", async () => {
 test("with nothing learned, the answer says so plainly", async () => {
   const { client } = pretendClaude([done("It's Sunday.")]);
   assert.deepEqual((await ask(createBrain({ client, qloo: pretendQloo() }))).learned, []);
+});
+
+test("only the picks Nion actually said are listed on screen, in the order it said them", async () => {
+  const picks = [entity({ id: "1", name: "Alpha Cafe" }), entity({ id: "2", name: "Beta Bistro" }), entity({ id: "3", name: "Gamma Grill" })];
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Try Gamma Grill first, or else Alpha Cafe.")]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo({ results: picks }) }), { coords: { lat: 39.7, lon: -105 } });
+  assert.deepEqual(result.suggestions.map((s) => s.name), ["Gamma Grill", "Alpha Cafe"]);
+});
+
+test("if Nion names none of the picks, none are listed", async () => {
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Nothing here is really your style. Want me to try something else?")]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 39.7, lon: -105 } });
+  assert.deepEqual(result.suggestions, []);
+  assert.equal(result.about, null);
+});
+
+test("the screen is told what the picks were based on", async () => {
+  const { client } = pretendClaude([
+    askQloo({ kind: "movie", likes: [{ name: "Radiohead", kind: "artist" }] }),
+    done("Try Noodle House."),
+  ]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo({ results: [entity({ kind: "movie" })] }) }));
+  assert.deepEqual(result.about, { kind: "movie", likes: ["Radiohead"], only: [] });
 });

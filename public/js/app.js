@@ -19,6 +19,7 @@ import { createListener, speechInSupported } from "./speech-in.js";
 import { speak, stopSpeaking, speechOutSupported } from "./speech-out.js";
 import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste } from "./storage.js";
 import { DEMO_TASTE, mergeLearned, tasteForRequest, summarizeTaste } from "./taste.js";
+import { headingFor, describePick } from "./picks.js";
 import { showState } from "./ui.js";
 import { geolocationPermission, getDevicePosition } from "./location.js";
 
@@ -34,6 +35,15 @@ const el = {
   tasteLine: document.getElementById("taste-line"),
   demoTaste: document.getElementById("demo-taste"),
   forgetTaste: document.getElementById("forget-taste"),
+  typed: document.getElementById("typed"),
+  typedInput: document.getElementById("typed-input"),
+  replyCard: document.getElementById("reply-card"),
+  youSaid: document.getElementById("you-said"),
+  reply: document.getElementById("reply"),
+  picks: document.getElementById("picks"),
+  picksTitle: document.getElementById("picks-title"),
+  picksBecause: document.getElementById("picks-because"),
+  picksList: document.getElementById("picks-list"),
 };
 
 const params = new URLSearchParams(location.search);
@@ -89,6 +99,9 @@ el.forgetTaste.addEventListener("click", () => {
 renderTaste();
 
 let state = "off"; // off | waiting | listening | thinking | speaking
+// Is voice switched on (the person tapped "Turn on Nion" and the microphone works)? When it
+// is not, Nion still answers typed questions, in text only, with no sound.
+let voiceActive = false;
 const session = {
   active: false, // is a conversation running?
   followUp: false, // is the follow-up window open? (see below)
@@ -161,7 +174,9 @@ const echo = { text: "", until: 0 };
 
 function statusText() {
   switch (state) {
-    case "off": return "Tap the button to turn Nion on.";
+    case "off": return speechInSupported && speechOutSupported
+      ? "Type a question below, or tap the button to talk to Nion."
+      : "Type a question below. (Talking to Nion needs Chrome.)";
     case "waiting":
       if (session.active) return "In a conversation. Just talk, or say “End the conversation.”";
       if (session.followUp) return "Go ahead, I'm still listening for a follow-up.";
@@ -197,6 +212,7 @@ const listener = createListener({
 function handleProblem(reason) {
   if (reason === "mic-blocked") {
     listener.stop();
+    voiceActive = false;
     setState("off");
     el.start.hidden = false;
     showProblem("Nion can't use the microphone. Allow it in Chrome's address bar, then tap the button again.");
@@ -205,8 +221,59 @@ function handleProblem(reason) {
   }
 }
 
-// Say something. Listening stays on, so you can interrupt.
+// What Nion says also appears as text, so it works on mute, and for anyone who types.
+function showReply(text, question) {
+  if (question !== undefined) el.youSaid.textContent = question ? `You: ${question}` : "";
+  el.reply.textContent = text;
+  el.replyCard.hidden = !text;
+}
+
+// The quiet list under what Nion said. Every word came from outside, so it is put on the page
+// as text only, never as HTML.
+function renderPicks(suggestions, about) {
+  el.picksList.replaceChildren();
+  const picks = Array.isArray(suggestions) ? suggestions.slice(0, 5) : [];
+  el.picks.hidden = picks.length === 0;
+  if (picks.length === 0) return;
+
+  const heading = headingFor(about);
+  el.picksTitle.textContent = heading.title;
+  el.picksBecause.textContent = heading.because;
+
+  for (const item of picks) {
+    const pick = describePick(item, about);
+    const card = document.createElement("li");
+    card.className = "pick";
+    const add = (tag, className, text) => {
+      if (!text) return;
+      const node = document.createElement(tag);
+      node.className = className;
+      node.textContent = text;
+      card.append(node);
+    };
+    add("p", "pick-name", pick.name);
+    add("p", "pick-line", pick.meta);
+    add("p", "pick-why", pick.why);
+    add("p", "pick-line", pick.detail);
+    add("p", "pick-line", pick.tags);
+    if (pick.mapUrl) {
+      const link = document.createElement("a");
+      link.className = "pick-link";
+      link.href = pick.mapUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open in Maps";
+      card.append(link);
+    }
+    el.picksList.append(card);
+  }
+}
+
+// Say something. Listening stays on, so you can interrupt. With voice off (typing only) it
+// is shown as text and nothing is spoken.
 async function say(text, { then = "waiting" } = {}) {
+  showReply(text);
+  if (!voiceActive) return true;
   const mine = ++turn;
   echo.text = text;
   echo.until = Infinity; // its voice is coming through the speakers right now
@@ -346,7 +413,11 @@ function handleHeard(text) {
 
   const action = decide(session, text);
   trace("decided", JSON.stringify(action));
+  return carryOut(action);
+}
 
+// Does what was decided. Used for what was heard and for what was typed.
+function carryOut(action) {
   switch (action.type) {
     case "ignore":
       // It turned out not to be for Nion: stop showing the listening icon.
@@ -456,6 +527,7 @@ async function useDeviceLocation() {
     session.awaiting = "place";
     placeTries = 0;
     await say("I couldn't get your location. Just tell me which city you're in.", { then: "listening" });
+    if (!voiceActive) setState("off");
   }
 }
 
@@ -524,6 +596,10 @@ async function ask(question, oneShot, gps) {
   const mine = ++turn;
   setState("thinking");
   showProblem("");
+  // Show what was asked and clear the last answer's list, so the screen never shows a list
+  // that belongs to a different question.
+  showReply("…", question);
+  renderPicks([]);
 
   // A question outside any conversation starts a new one (and gets a greeting).
   // Otherwise Claude gets everything said so far, so follow-ups make sense.
@@ -545,6 +621,7 @@ async function ask(question, oneShot, gps) {
   // until that has finished, so the two never overlap.
   let fillerDone = Promise.resolve();
   const fillerTimer = setTimeout(() => {
+    if (!voiceActive) return; // typing only: no sound, the "Thinking…" line is enough
     if (mine !== turn || state !== "thinking") return; // already answered or interrupted
     const phrase = nextFiller();
     trace("filler", phrase);
@@ -594,6 +671,7 @@ async function ask(question, oneShot, gps) {
     }
 
     const { reply } = data;
+    renderPicks(data.suggestions, data.about); // appears as Nion starts to speak
     if (data.place) known.place = data.place; // worked out from GPS: remember it
     // The person said something about their taste: keep it for next time.
     if (Array.isArray(data.learned) && data.learned.length > 0) {
@@ -606,7 +684,8 @@ async function ask(question, oneShot, gps) {
     conversationId = recordExchange(conversationId, question, reply, data.sources);
     const finished = await say(reply);
     // After an answer, leave the follow-up window open for a moment.
-    if (finished && !session.active) openFollowUp();
+    // (Typing only has no follow-up window: the typed conversation just carries on.)
+    if (finished && !session.active && voiceActive) openFollowUp();
   } catch (error) {
     clearTimeout(askTimeout);
     clearTimeout(fillerTimer);
@@ -620,8 +699,44 @@ async function ask(question, oneShot, gps) {
     );
     await fillerFinished(); // let a "one moment" finish before saying this
     await say(TROUBLE);
+  } finally {
+    // Typing only: nothing else will move the icon off "thinking", so do it here.
+    if (!voiceActive && mine === turn && state === "thinking") setState("off");
   }
 }
+
+// Something typed into the box. It goes the same way as something said, except there is no wake
+// phrase to look for: if you typed it, it is for Nion.
+function handleTyped(raw) {
+  const text = String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!text || locating) return;
+  trace("typed", `“${text}”`);
+
+  // Typing while Nion is busy cancels what it was doing, like interrupting by voice.
+  if (state === "speaking" || state === "thinking") {
+    if (voiceActive) {
+      interrupt();
+    } else {
+      turn += 1;
+      abortAsk?.abort();
+    }
+  }
+
+  // Nion just asked for your name or where you are: that is what this is.
+  if (session.awaiting === "name" || session.awaiting === "place") return carryOut(decide(session, text));
+
+  session.awaiting = null;
+  clearTimeout(questionTimer);
+  // The first question starts a conversation (and gets a greeting); the rest follow on from it.
+  return ask(text, messages.length === 0);
+}
+
+el.typed.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = el.typedInput.value;
+  el.typedInput.value = "";
+  handleTyped(text);
+});
 
 // A manual way to stop Nion, for when your voice can't be heard over its own (on
 // laptop speakers the microphone hears Nion too): press Escape, or tap the circle.
@@ -647,6 +762,7 @@ el.start.addEventListener("click", async () => {
   el.start.hidden = true;
   el.convo.hidden = false;
   showProblem("");
+  voiceActive = true;
   listener.start();
 
   // First use: Nion asks your name once.
@@ -658,8 +774,9 @@ el.start.addEventListener("click", async () => {
   }
 });
 
+// A browser without speech can still type to Nion. Only talking needs Chrome.
 if (!speechInSupported || !speechOutSupported) {
   el.start.hidden = true;
-  el.status.textContent = "Nion needs a browser that can do speech.";
-  showProblem("This browser can't listen or speak. Please open Nion in Google Chrome.");
+  showProblem("Talking to Nion works in Google Chrome. You can still type to Nion here.");
 }
+el.status.textContent = statusText();
