@@ -286,6 +286,29 @@ main > * {
   font-size: 0.8rem;
 }
 
+/* What Nion knows about the person's taste */
+.taste {
+  margin: 22px 0 4px;
+}
+
+.taste-line {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+
+.taste-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.taste-actions .pill.small {
+  margin-top: 10px;
+}
+
 .heard {
   margin: 20px 0 0;
   min-height: 1.5em;

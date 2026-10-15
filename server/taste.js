@@ -11,6 +11,86 @@
 import { KINDS, QlooError, pickTag } from "./qloo.js";
 
 export const ASK_QLOO = "ask_qloo";
+export const REMEMBER_TASTE = "remember_taste";
+
+// ---------- what Nion remembers about a person's taste ----------
+//
+// The page keeps a short list of things the person has said they like or dislike, and sends
+// it with every request. It came from the browser, so it is treated as untrusted: it goes
+// into Nion's instructions, so only plain words are allowed through.
+
+/** The sorts of taste Nion keeps. "food" is a cuisine or dish; "genre" is a style such as jazz or sci-fi. */
+export const TASTE_KINDS = ["food", "genre", "artist", "movie", "tv_show", "book", "podcast", "brand", "place", "destination"];
+const MAX_TASTE_ITEMS = 30;
+
+/** A taste word kept to letters, numbers and a few marks, so it is safe to put in instructions. */
+export function cleanTasteWord(value, max = 40) {
+  if (typeof value !== "string") return undefined;
+  const cleaned = value
+    .replace(/[^\p{L}\p{N}\p{M}\s.,'&:+!-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+  return cleaned || undefined;
+}
+
+/** One remembered taste, checked. Returns { name, kind, opinion } or null if it is not usable. */
+export function cleanTasteItem(raw) {
+  const name = cleanTasteWord(raw?.name);
+  if (!name || !TASTE_KINDS.includes(raw?.kind)) return null;
+  return { name, kind: raw.kind, opinion: raw.opinion === "dislike" ? "dislike" : "like" };
+}
+
+/** The whole list from the page, checked, without repeats, and kept short. */
+export function cleanTaste(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const items = [];
+  for (const entry of raw) {
+    const item = cleanTasteItem(entry);
+    if (!item) continue;
+    const key = `${item.kind}|${item.name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(item);
+    if (items.length >= MAX_TASTE_ITEMS) break;
+  }
+  return items;
+}
+
+/** The tool Claude uses to note something the person has said about their taste. */
+export function rememberTasteTool() {
+  return {
+    name: REMEMBER_TASTE,
+    description:
+      "Note something the person has just told you about their taste, so you remember it next time: " +
+      "a thing they like or dislike, or their yes or no to a taste you suggested. " +
+      "Only use it for what the person actually said in this conversation, never for your own guesses. " +
+      "Call it in the same step as ask_qloo, and call it once per thing.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The thing, in a few words: ramen, Radiohead, Blade Runner 2049, jazz." },
+        kind: {
+          type: "string",
+          enum: TASTE_KINDS,
+          description: "food = a cuisine or dish; genre = a style like jazz or sci-fi; the others are what they say.",
+        },
+        opinion: { type: "string", enum: ["like", "dislike"] },
+      },
+      required: ["name", "kind", "opinion"],
+    },
+  };
+}
+
+/** Runs one remember_taste request. Returns { text, learned }, where learned is the checked item or null. */
+export function runRememberTaste(input) {
+  const learned = cleanTasteItem(input);
+  return learned
+    ? { text: "Noted. You can carry on with your answer.", learned }
+    : { text: "That could not be saved, so carry on without it.", learned: null };
+}
+
 
 const KIND_NAMES = Object.keys(KINDS);
 const MAX_LIKES = 3;

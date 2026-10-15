@@ -17,7 +17,8 @@ import { parseUtterance } from "./wake.js";
 import { isEcho, isInterruption, stripLeadingEcho, stripPhrase } from "./echo.js";
 import { createListener, speechInSupported } from "./speech-in.js";
 import { speak, stopSpeaking, speechOutSupported } from "./speech-out.js";
-import { getName, setName, clearName, clearConversations, recordExchange } from "./storage.js";
+import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste } from "./storage.js";
+import { DEMO_TASTE, mergeLearned, tasteForRequest, summarizeTaste } from "./taste.js";
 import { showState } from "./ui.js";
 import { geolocationPermission, getDevicePosition } from "./location.js";
 
@@ -30,14 +31,18 @@ const el = {
   debug: document.getElementById("debug"),
   orb: document.getElementById("orb"),
   copylog: document.getElementById("copylog"),
+  tasteLine: document.getElementById("taste-line"),
+  demoTaste: document.getElementById("demo-taste"),
+  forgetTaste: document.getElementById("forget-taste"),
 };
 
 const params = new URLSearchParams(location.search);
 
-// Opening the page with ?reset starts completely fresh: it forgets the saved name and
-// all saved conversations (useful before recording a demo).
+// Opening the page with ?reset starts completely fresh: it forgets the saved name, the
+// saved taste and all saved conversations (useful before recording a demo).
 if (params.has("reset")) {
   clearName();
+  clearTaste();
   clearConversations();
 }
 
@@ -61,6 +66,27 @@ function trace(kind, detail = "") {
   el.debug.scrollTop = el.debug.scrollHeight;
 }
 el.copylog.addEventListener("click", () => navigator.clipboard?.writeText(traceLines.join("\n")));
+
+// ---------- what Nion knows about the person's taste ----------
+// It only learns what the person says. The demo taste is for anyone who would rather not talk.
+function renderTaste() {
+  const items = getTaste();
+  el.tasteLine.textContent = summarizeTaste(items);
+  const hasTaste = items.length > 0;
+  el.demoTaste.hidden = hasTaste;
+  el.forgetTaste.hidden = !hasTaste;
+}
+el.demoTaste.addEventListener("click", () => {
+  saveTaste(DEMO_TASTE);
+  trace("taste", "demo taste loaded");
+  renderTaste();
+});
+el.forgetTaste.addEventListener("click", () => {
+  clearTaste();
+  trace("taste", "forgotten");
+  renderTaste();
+});
+renderTaste();
 
 let state = "off"; // off | waiting | listening | thinking | speaking
 const session = {
@@ -489,6 +515,8 @@ function currentContext(isNewConversation) {
     }),
     userName: getName() || undefined,
     isNewConversation,
+    // What they have told Nion they like (the server checks it before using it).
+    taste: tasteForRequest(getTaste()),
   };
 }
 
@@ -567,6 +595,12 @@ async function ask(question, oneShot, gps) {
 
     const { reply } = data;
     if (data.place) known.place = data.place; // worked out from GPS: remember it
+    // The person said something about their taste: keep it for next time.
+    if (Array.isArray(data.learned) && data.learned.length > 0) {
+      saveTaste(mergeLearned(getTaste(), data.learned));
+      trace("taste", `learned ${data.learned.map((t) => `${t.opinion} ${t.name}`).join(", ")}`);
+      renderTaste();
+    }
     thread.push({ role: "assistant", content: reply });
     // Save it for the History screen (only questions that got an answer).
     conversationId = recordExchange(conversationId, question, reply, data.sources);

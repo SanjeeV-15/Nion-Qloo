@@ -48,6 +48,16 @@
       <button id="convo" class="pill" type="button" hidden>Start conversation</button>
     </div>
 
+    <!-- What Nion knows about the person's taste. It only learns what they say; the demo
+         taste is for anyone who would rather not talk. app.js fills this in. -->
+    <div class="taste">
+      <p id="taste-line" class="taste-line" aria-live="polite">Nion doesn't know your taste yet.</p>
+      <div class="taste-actions">
+        <button id="demo-taste" class="pill small" type="button">Use a demo taste</button>
+        <button id="forget-taste" class="pill small" type="button" hidden>Forget my taste</button>
+      </div>
+    </div>
+
     <p><a class="history-link" href="/history.html">History</a></p>
 
     <p id="heard" class="heard" aria-live="polite" hidden></p>

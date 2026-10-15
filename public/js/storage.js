@@ -30,6 +30,38 @@ export function clearName() {
   }
 }
 
+// ---------- taste (what the person has said they like) ----------
+//
+// A short list of { name, kind, opinion } kept on this device and sent with each question,
+// so Nion can pick things that suit the person. See taste.js for what goes in it.
+
+const TASTE_KEY = "nion.taste";
+
+export function getTaste() {
+  try {
+    const list = JSON.parse(localStorage.getItem(TASTE_KEY) ?? "[]");
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return []; // nothing saved, or it was damaged: Nion knows nothing yet
+  }
+}
+
+export function saveTaste(items) {
+  try {
+    localStorage.setItem(TASTE_KEY, JSON.stringify(items));
+  } catch {
+    // Not saved: Nion will learn it again.
+  }
+}
+
+export function clearTaste() {
+  try {
+    localStorage.removeItem(TASTE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+
 // ---------- conversations (for the History screen) ----------
 //
 // Each conversation is saved as { id, startedAt, updatedAt, turns: [...] }. A turn is

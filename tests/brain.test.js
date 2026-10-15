@@ -61,14 +61,14 @@ test("a plain question is answered in one round, with no Qloo call", async () =>
   assert.equal(result.usage.qlooCalls, 0);
 });
 
-test("Haiku is the default brain, with Qloo and a single web search on offer", async () => {
+test("Haiku is the default brain, with Qloo, a taste note and a single web search on offer", async () => {
   delete process.env.NION_MODEL; // the default, whatever the shell says
   const { client, requests } = pretendClaude([done("Hi.")]);
   await ask(createBrain({ client, qloo: pretendQloo() }));
   const request = requests[0];
   assert.equal(request.model, "claude-haiku-5-5");
   const names = request.tools.map((tool) => tool.name);
-  assert.deepEqual(names, ["web_search", "ask_qloo"]);
+  assert.deepEqual(names, ["web_search", "ask_qloo", "remember_taste"]);
   assert.equal(request.tools[0].max_uses, 1);
 });
 
@@ -167,4 +167,51 @@ test("a refusal is spoken politely", async () => {
   const { client } = pretendClaude([{ stop_reason: "refusal", content: [], usage: {} }]);
   const result = await ask(createBrain({ client, qloo: pretendQloo() }));
   assert.match(result.reply, /can't help with that/);
+});
+
+const remember = (input, id = "toolu_r") => ({ type: "tool_use", id, name: "remember_taste", input });
+
+test("Claude can note a taste and ask Qloo in the same step", async () => {
+  const { client, requests } = pretendClaude([
+    {
+      stop_reason: "tool_use",
+      content: [
+        remember({ name: "ramen", kind: "food", opinion: "like" }),
+        { type: "tool_use", id: "toolu_q", name: "ask_qloo", input: { kind: "place", tastes: ["ramen"] } },
+      ],
+      usage: {},
+    },
+    done("Sample Noodle Bar is close."),
+  ]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 39.7, lon: -105 } });
+
+  assert.deepEqual(result.learned, [{ name: "ramen", kind: "food", opinion: "like" }]);
+  assert.equal(result.suggestions.length, 1);
+  assert.equal(result.reply, "Sample Noodle Bar is close.");
+  // Both answers go back together, in one step, so there is only one extra round trip.
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1].messages[2].content.map((c) => c.tool_use_id), ["toolu_r", "toolu_q"]);
+});
+
+test("a taste that is not usable is refused without breaking the answer", async () => {
+  const { client, requests } = pretendClaude([
+    { stop_reason: "tool_use", content: [remember({ name: "x", kind: "nonsense", opinion: "like" })], usage: {} },
+    done("Okay."),
+  ]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo() }));
+  assert.deepEqual(result.learned, []);
+  assert.equal(requests[1].messages[2].content[0].is_error, true);
+  assert.equal(result.reply, "Okay.");
+});
+
+test("only a few tastes can be saved from one question", async () => {
+  const many = Array.from({ length: 8 }, (_, i) => remember({ name: `thing ${i}`, kind: "genre", opinion: "like" }, `t${i}`));
+  const { client } = pretendClaude([{ stop_reason: "tool_use", content: many, usage: {} }, done("Okay.")]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo() }));
+  assert.equal(result.learned.length, 3);
+});
+
+test("with nothing learned, the answer says so plainly", async () => {
+  const { client } = pretendClaude([done("It's Sunday.")]);
+  assert.deepEqual((await ask(createBrain({ client, qloo: pretendQloo() }))).learned, []);
 });

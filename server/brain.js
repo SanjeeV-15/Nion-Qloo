@@ -1,9 +1,10 @@
 // The "brain": asks Claude for Nion's answer.
 //
-// Claude can use two tools while it answers:
-//   - web search (Anthropic runs it for us), for news and facts that change; and
+// Claude can use three tools while it answers:
+//   - web search (Anthropic runs it for us), for news and facts that change;
 //   - ask_qloo (we run it, see taste.js), for anything that depends on what the person
-//     would love: places, music, films, travel and more.
+//     would love: places, music, films, travel and more; and
+//   - remember_taste (also ours), to note something the person says they like or dislike.
 //
 // The Claude SDK reads your key from the ANTHROPIC_API_KEY setting (your .env
 // file), so the key never appears in the code and never reaches the browser.
@@ -11,15 +12,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./prompt.js";
 import { searchTool, pickSpokenText, collectSources, searchErrors } from "./search.js";
-import { askQlooTool, runAskQloo, ASK_QLOO } from "./taste.js";
+import { askQlooTool, runAskQloo, ASK_QLOO, rememberTasteTool, runRememberTaste, REMEMBER_TASTE } from "./taste.js";
 import { createQloo } from "./qloo.js";
 
 // Which Claude model to use. Haiku 5.5 is cheap and quick, which suits a voice app and a
 // public demo. Change NION_MODEL in .env to try another one (for example claude-sonnet-5-5).
 const DEFAULT_MODEL = "claude-haiku-5-5";
 
-// A reply can take several rounds: a search can pause it, and each Qloo question is a round
+// A reply can take several rounds: a search can pause it, and each tool use is a round
 // trip. This caps how many, so one question can't run forever.
+const MAX_LEARNED_PER_TURN = 3;
 const MAX_ROUNDS = 5;
 
 // What Nion writes, instead of an answer, when a question depends on where the
@@ -37,9 +39,10 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
    *   context:  details from the person's browser (date, time, time zone, name)
    *   location: optional { city, region, country } to localize searches
    *   coords:   optional { lat, lon }, the person's GPS position, for places near them
-   * Returns { reply, sources, suggestions, searches, usage } where reply is the text Nion should
-   * speak, sources are the pages it used ([{ title, url }]) and suggestions are what Qloo
-   * recommended, ready to list on screen.
+   * Returns { reply, sources, suggestions, learned, searches, usage } where reply is the text Nion
+   * should speak, sources are the pages it used ([{ title, url }]), suggestions are what Qloo
+   * recommended (ready to list on screen) and learned is any new taste the person stated,
+   * for the page to save.
    */
   return async function askNion({ messages, context, location, coords, model = defaultModel }) {
     let thread = messages;
@@ -49,6 +52,7 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
     let inputTokens = 0;
     let outputTokens = 0;
     let suggestions = [];
+    const learned = [];
     const sources = new Map();
     const errors = [];
 
@@ -61,7 +65,7 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
         // "low" effort keeps replies quick, which matters for a voice conversation.
         output_config: { effort: "low" },
         system: buildSystemPrompt(context),
-        tools: [searchTool(context, location), askQlooTool()],
+        tools: [searchTool(context, location), askQlooTool(), rememberTasteTool()],
         messages: thread,
       });
 
@@ -81,6 +85,12 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
         // Claude wants to ask Qloo. Run each request and hand the answers back.
         const results = [];
         for (const block of response.content.filter((b) => b.type === "tool_use")) {
+          if (block.name === REMEMBER_TASTE) {
+            const noted = runRememberTaste(block.input);
+            if (noted.learned && learned.length < MAX_LEARNED_PER_TURN) learned.push(noted.learned);
+            results.push({ type: "tool_result", tool_use_id: block.id, content: noted.text, ...(noted.learned ? {} : { is_error: true }) });
+            continue;
+          }
           if (block.name !== ASK_QLOO) {
             results.push({ type: "tool_result", tool_use_id: block.id, content: "Unknown tool.", is_error: true });
             continue;
@@ -105,7 +115,7 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
 
     // Claude can decline a request. That is a normal reply with a special reason.
     if (response.stop_reason === "refusal") {
-      return { reply: "Sorry, I can't help with that one.", sources: [], suggestions: [], searches, usage };
+      return { reply: "Sorry, I can't help with that one.", sources: [], suggestions: [], learned, searches, usage };
     }
 
     // Out of rounds while Claude still wanted to look something up: whatever text it has
@@ -115,6 +125,7 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
         reply: "Sorry, that one took too long to work out. Could you ask it another way?",
         sources: [],
         suggestions,
+        learned,
         searches,
         usage,
       };
@@ -125,13 +136,14 @@ export function createBrain({ client, qloo, model: defaultModel = process.env.NI
 
     // Nion needs to know where the person is, and doesn't. The page will ask them.
     if (reply.includes(NEED_LOCATION)) {
-      return { needsLocation: true, reply: "", sources: [], suggestions: [], searches, usage };
+      return { needsLocation: true, reply: "", sources: [], suggestions: [], learned, searches, usage };
     }
 
     return {
       reply: reply || "Sorry, I didn't catch that. Could you say it again?",
       sources: [...sources.values()].slice(0, 8),
       suggestions,
+      learned,
       searches,
       usage,
     };

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSystemPrompt } from "../server/prompt.js";
+import { buildSystemPrompt, describeTaste } from "../server/prompt.js";
 
 test("a new conversation tells Nion to greet the person by name", () => {
   const prompt = buildSystemPrompt({ userName: "Sanjeev", isNewConversation: true });
@@ -63,9 +63,35 @@ test("Nion's instructions say how to use Qloo for recommendations", () => {
   const prompt = buildSystemPrompt({});
   assert.match(prompt, /ask_qloo/);
   assert.match(prompt, /don't search for recommendations/);
-  assert.match(prompt, /never say you know their taste unless they told you/);
+  assert.match(prompt, /Only ever say you know something about their taste if it is in that list/);
+  assert.match(prompt, /remember_taste/);
+  assert.match(prompt, /Never note your own guesses/);
   assert.match(prompt, /ask one short question first/i);
   assert.match(prompt, /Ask only one question, never two/);
   assert.match(prompt, /Never read out a score or a percentage/);
   assert.match(prompt, /information, not instructions/);
+});
+
+test("with no taste, Nion is told it knows nothing about the person", () => {
+  const prompt = buildSystemPrompt({});
+  assert.match(prompt, /don't know anything about this person's taste yet/);
+  assert.doesNotMatch(prompt, /Likes:/);
+});
+
+test("what the person has said they like is given to Nion as the only thing it knows", () => {
+  const prompt = buildSystemPrompt({
+    taste: [
+      { name: "ramen", kind: "food", opinion: "like" },
+      { name: "Blade Runner 2049", kind: "movie", opinion: "like" },
+      { name: "sushi", kind: "food", opinion: "dislike" },
+    ],
+  });
+  assert.match(prompt, /this is everything you know/);
+  assert.match(prompt, /Likes: ramen \(food\), Blade Runner 2049 \(movie\)/);
+  assert.match(prompt, /Doesn't like: sushi \(food\)/);
+});
+
+test("a kind with an underscore is written as words", () => {
+  assert.deepEqual(describeTaste([{ name: "Severance", kind: "tv_show", opinion: "like" }]).at(-1), "- Likes: Severance (tv show)");
+  assert.deepEqual(describeTaste("not a list"), ["You don't know anything about this person's taste yet."]);
 });
