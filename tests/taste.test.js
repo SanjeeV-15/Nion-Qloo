@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   runAskQloo, askQlooTool, matchWord, distanceWords, presentResult,
   cleanTasteWord, cleanTasteItem, cleanTaste, rememberTasteTool, runRememberTaste, TASTE_KINDS, spokenSuggestions,
+  splitPicksMarker, picksByNumber,
 } from "../server/taste.js";
 import { QlooError } from "../server/qloo.js";
 
@@ -415,4 +416,82 @@ test("'near' is only for places, so a film request ignores it", async () => {
   const qloo = pretendQloo();
   await runAskQloo({ qloo, input: { kind: "movie", near: "Lisbon" }, context: { geocode: async () => { throw new Error("should not be called"); } } });
   assert.equal(qloo.asked.recommend[0].place, undefined);
+});
+
+// ---------- the unspoken note of which results were named ----------
+
+test("the picks note is taken out of the reply and read as numbers", () => {
+  assert.deepEqual(splitPicksMarker("Try Moon, then Sample Film. [[picks: 3, 1]]"), { text: "Try Moon, then Sample Film.", numbers: [3, 1] });
+  assert.deepEqual(splitPicksMarker("Nothing fits. [[picks: none]]"), { text: "Nothing fits.", numbers: [] });
+  assert.deepEqual(splitPicksMarker("Try Moon. [[Picks: 2]] Want more?"), { text: "Try Moon. Want more?", numbers: [2] });
+});
+
+test("a reply with no note has no numbers, and is left exactly as it was", () => {
+  assert.deepEqual(splitPicksMarker("Try Moon."), { text: "Try Moon.", numbers: null });
+  assert.deepEqual(splitPicksMarker(undefined), { text: "", numbers: null });
+});
+
+test("a note that was cut off is still removed, so it is never spoken", () => {
+  const cut = splitPicksMarker("Try Moon. [[picks: 1, 2");
+  assert.equal(cut.text, "Try Moon.");
+  assert.deepEqual(cut.numbers, [1, 2]);
+  assert.equal(splitPicksMarker("Try Moon. [[picks:").text, "Try Moon.");
+});
+
+test("if there are two notes, the last one counts and both are removed", () => {
+  const out = splitPicksMarker("[[picks: 1]] Try Moon. [[picks: 2]]");
+  assert.equal(out.text, "Try Moon.");
+  assert.deepEqual(out.numbers, [2]);
+});
+
+test("picks are chosen by number, in the order given, without repeats or made-up numbers", () => {
+  const picks = named("A", "B", "C");
+  assert.deepEqual(picksByNumber([3, 1], picks).map((p) => p.name), ["C", "A"]);
+  assert.deepEqual(picksByNumber([2, 2, 9, 0], picks).map((p) => p.name), ["B"]);
+  assert.deepEqual(picksByNumber([], picks), []);
+  assert.deepEqual(picksByNumber(null, undefined), []);
+});
+
+// ---------- an empty category tag is not "nothing here" ----------
+
+test("if a cuisine tag has no places, the other tags for the same word are tried", async () => {
+  // Found with real answers: "tacos" gave a restaurant tag with no places, but "taco" had five.
+  const tag = (id) => ({ id, name: id.split(":").at(-1) });
+  const qloo = pretendQloo({
+    tags: {
+      tacos: [tag("urn:tag:genre:place:restaurant:tacos"), tag("urn:tag:cuisine:qloo:tacos")],
+      taco: [tag("urn:tag:genre:place:restaurant:taco")],
+    },
+    results: (args) => (args.filterTagIds.includes("urn:tag:genre:place:restaurant:taco") ? [entity({ name: "Taco Place" })] : []),
+  });
+  const out = await runAskQloo({ qloo, input: { kind: "place", only: "tacos" }, context: { coords: denver } });
+  assert.equal(out.suggestions[0].name, "Taco Place");
+  assert.deepEqual(out.about.only, ["taco"]);
+  // The restaurant tag for the singular word is tried before the looser cuisine tag.
+  assert.equal(qloo.asked.recommend.length, 2, "the first tag, then the better one");
+  assert.deepEqual(qloo.asked.recommend[1].filterTagIds, ["urn:tag:genre:place:restaurant:taco"]);
+});
+
+test("if no tag for the word has any places, it says so and does not loop for ever", async () => {
+  const tag = (id) => ({ id, name: "x" });
+  const qloo = pretendQloo({
+    tags: { zzz: [tag("urn:tag:genre:place:restaurant:zzz"), tag("urn:tag:cuisine:qloo:zzz")] },
+    results: [],
+  });
+  const out = await runAskQloo({ qloo, input: { kind: "place", only: "zzz" }, context: { coords: denver } });
+  assert.deepEqual(out.suggestions, []);
+  assert.match(out.text, /found nothing/);
+  assert.ok(qloo.asked.recommend.length <= 4, `too many Qloo calls: ${qloo.asked.recommend.length}`);
+});
+
+test("tags are not retried when there was no filter to blame", async () => {
+  const qloo = pretendQloo({ results: [] });
+  await runAskQloo({ qloo, input: { kind: "place" }, context: { coords: denver } });
+  assert.equal(qloo.asked.recommend.length, 2, "near, then the wider circle, as before");
+});
+
+test("each result is numbered, and Claude is asked to say which numbers it named", async () => {
+  const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place" }, context: { coords: denver } });
+  assert.match(out.text, /\[\[picks: N, N\]\]/);
+  assert.match(out.text, /^1\. Noodle House/m);
 });

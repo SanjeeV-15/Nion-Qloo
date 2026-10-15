@@ -98,16 +98,16 @@ const cases = [
   {
     group: "location", city: "Lisbon", taste: [], say: "I love ramen. Where can I eat around here?",
     expect: "ramen places in Lisbon, and no walking times or distances (only the city's middle is known)",
-    qloo: "any>0", nearCity: { lat: 38.72, lon: -9.14, withinKm: 15 }, mustNotMatch: /minutes? on foot|\bwalk|miles?\b|kilomet/i,
+    qloo: "any>0", needPicks: true, nearCity: { lat: 38.72, lon: -9.14, withinKm: 15 }, mustNotMatch: /\d+\s*(minutes?|min)\b[^.]*\b(foot|walk)|minutes? (on foot|walk)|\b\d+(\.\d+)?\s*(miles?|km|kilomet)/i,
   },
   {
     group: "location", city: "Miami", taste: [], say: "Any good tacos near me?",
-    expect: "taco places in Miami, no distances", qloo: "any>0", nearCity: { lat: 25.77, lon: -80.19, withinKm: 25 },
-    mustNotMatch: /minutes? on foot|\bwalk|miles?\b|kilomet/i,
+    expect: "taco places in Miami, no distances", qloo: "any>0", needPicks: true, nearCity: { lat: 25.77, lon: -80.19, withinKm: 25 },
+    mustNotMatch: /\d+\s*(minutes?|min)\b[^.]*\b(foot|walk)|minutes? (on foot|walk)|\b\d+(\.\d+)?\s*(miles?|km|kilomet)/i,
   },
   {
     group: "location", taste: [], say: "I love ramen. What's good to eat if I go to Tokyo next month?",
-    expect: "uses 'near Tokyo' even though the person is in Denver", qloo: "any>0", nearCity: { lat: 35.68, lon: 139.76, withinKm: 25 },
+    expect: "uses 'near Tokyo' even though the person is in Denver", qloo: "any>0", needPicks: true, nearCity: { lat: 35.68, lon: 139.76, withinKm: 25 },
   },
 ];
 
@@ -178,6 +178,7 @@ for (const c of chosen) {
   if (c.mustNotMatch && c.mustNotMatch.test(result.reply)) issues.push(`reply should not match ${c.mustNotMatch}`);
   if (c.learned && !learned.some((l) => c.learned.test(l))) issues.push(`should have saved something like ${c.learned}`);
   if (c.notLearned && learned.some((l) => c.notLearned.test(l))) issues.push(`should not have saved ${learned.filter((l) => c.notLearned.test(l)).join(", ")}`);
+  if (c.needPicks && result.suggestions.length === 0) issues.push("named places but none were listed on screen");
   if (c.nearCity) {
     const first = result.suggestions.find((p) => p.location);
     if (!first) issues.push("no pick with a position to check");

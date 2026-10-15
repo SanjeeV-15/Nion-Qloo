@@ -12,7 +12,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./prompt.js";
 import { searchTool, pickSpokenText, collectSources, searchErrors } from "./search.js";
-import { askQlooTool, runAskQloo, ASK_QLOO, rememberTasteTool, runRememberTaste, REMEMBER_TASTE, spokenSuggestions } from "./taste.js";
+import { askQlooTool, runAskQloo, ASK_QLOO, rememberTasteTool, runRememberTaste, REMEMBER_TASTE, spokenSuggestions, splitPicksMarker, picksByNumber } from "./taste.js";
 import { createQloo } from "./qloo.js";
 import { geocodePlace } from "./place.js";
 
@@ -138,15 +138,18 @@ export function createBrain({ client, qloo, geocode = geocodePlace, model: defau
       };
     }
 
-    // The spoken words are the text after the last search result.
-    const reply = pickSpokenText(response.content);
+    // The spoken words are the text after the last search result, without the unspoken picks note.
+    const { text: reply, numbers } = splitPicksMarker(pickSpokenText(response.content));
 
     // Nion needs to know where the person is, and doesn't. The page will ask them.
     if (reply.includes(NEED_LOCATION)) {
       return { needsLocation: true, reply: "", sources: [], suggestions: [], learned, searches, usage };
     }
 
-    const spoken = spokenSuggestions(reply, suggestions);
+    // Which Qloo picks were said: the numbers Claude gave, or, if it gave none that make sense, the
+    // names it said.
+    const byNumber = numbers ? picksByNumber(numbers, suggestions) : [];
+    const spoken = numbers && (byNumber.length > 0 || numbers.length === 0) ? byNumber : spokenSuggestions(reply, suggestions);
     return {
       reply: reply || "Sorry, I didn't catch that. Could you say it again?",
       sources: [...sources.values()].slice(0, 8),

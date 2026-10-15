@@ -257,3 +257,29 @@ test("a city the person named is handled as the middle of that city", async () =
   assert.match(requests[1].messages[2].content[0].content, /around the middle of Miami/);
   assert.equal(result.suggestions[0].distance, undefined);
 });
+
+test("the picks note chooses what is listed, even when Nion shortens or translates the names", async () => {
+  const picks = [entity({ id: "1", name: "Sample Ramen Akasaka Branch" }), entity({ id: "2", name: "サンプル ラーメン" }), entity({ id: "3", name: "Sample Arashi" })];
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Try Sample Ramen in Akasaka, or the one with the kanji sign. [[picks: 1, 2]]")]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo({ results: picks }) }), { coords: { lat: 35.7, lon: 139.7 } });
+  assert.deepEqual(result.suggestions.map((s) => s.id), ["1", "2"]);
+});
+
+test("the picks note is never spoken or saved", async () => {
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Try Noodle House. Want more? [[picks: 1]]")]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 1, lon: 2 } });
+  assert.equal(result.reply, "Try Noodle House. Want more?");
+  assert.doesNotMatch(JSON.stringify(result), /picks/i);
+});
+
+test("'none' in the picks note means nothing is listed, even if a name was said", async () => {
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Noodle House isn't really your style. [[picks: none]]")]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 1, lon: 2 } });
+  assert.deepEqual(result.suggestions, []);
+});
+
+test("numbers that make no sense fall back to the names that were said", async () => {
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Try Noodle House. [[picks: 7]]")]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 1, lon: 2 } });
+  assert.equal(result.suggestions.length, 1);
+});
