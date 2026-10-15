@@ -66,6 +66,14 @@ Server
   requests", and remembers name lookups. Slice 7 adds a monthly guard: when the allowance runs low,
   Nion says the demo is resting instead of failing. Higher limits can be asked for in Qloo's Discord.
 
+## Progress (updated Oct 14)
+
+Slices 1 to 5 are done, committed locally and checked against real Claude and Qloo: the Qloo adapter,
+Claude using it on Haiku, taste memory with a demo taste, typing plus the on-screen list of picks, and
+location (a said or typed city, and "near Lisbon" while in Denver). 269 tests pass. Real Claude spend so
+far is about 8 cents; a question costs about 0.2 cents. Next: slice 6 (the "talks over me" bug, which
+needs a real Chrome session with `?debug`), then hosting. About a week ahead of the dates below.
+
 ## Build order (each slice: tests, commit, your check; no pushes without your yes)
 
 | # | Slice | Target | You can check |
