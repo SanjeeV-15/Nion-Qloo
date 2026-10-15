@@ -22,6 +22,7 @@ const WALKING_M_PER_MIN = 80; // about 4.8 km/h
 
 // Tag families that make sense for a place filter, best first. (Learned from real Qloo
 // answers: the plain "restaurant" tag is too loose, a cuisine under it works well.)
+const CATEGORY_TAG = /^urn:tag:(genre:place:restaurant:|cuisine:)/;
 const PLACE_TAG_PREFIXES = ["urn:tag:genre:place:restaurant:", "urn:tag:cuisine:", "urn:tag:genre:place:"];
 
 /** The tool, in the shape Claude's API wants. */
@@ -176,28 +177,38 @@ export async function runAskQloo({ qloo, input, context = {} }) {
       }
     }
 
+    // A cuisine or restaurant category ("ramen") works best as a filter: Qloo's real answers
+    // showed that as a loose taste signal it returns bagels and a ballpark, and mixed with a
+    // filter it lets a Thai place in. So for places those words become filters, and only
+    // other tastes (jazz, sci-fi) are used as signals.
     const tagIds = [];
+    const filterTagIds = [];
     const tasteNames = [];
+    const onlyNames = [];
+    const isCategory = (tag) => kind === "place" && CATEGORY_TAG.test(tag.id);
+    const addTag = (tag, word) => {
+      const name = tag.name ?? word;
+      if (isCategory(tag)) {
+        if (!filterTagIds.includes(tag.id)) {
+          filterTagIds.push(tag.id);
+          onlyNames.push(name);
+        }
+      } else if (!tagIds.includes(tag.id)) {
+        tagIds.push(tag.id);
+        tasteNames.push(name);
+      }
+    };
+
     for (const word of (Array.isArray(input.tastes) ? input.tastes : []).slice(0, MAX_TASTES)) {
       const tag = await tagFor(qloo, word, kind);
-      if (tag) {
-        tagIds.push(tag.id);
-        tasteNames.push(tag.name ?? word);
-      } else {
-        notes.push(`Qloo has no taste called "${String(word).slice(0, 40)}", so it was not used.`);
-      }
+      if (tag) addTag(tag, word);
+      else notes.push(`Qloo has no taste called "${String(word).slice(0, 40)}", so it was not used.`);
     }
 
-    const filterTagIds = [];
-    let onlyName;
     if (kind === "place" && typeof input.only === "string" && input.only.trim()) {
       const tag = await tagFor(qloo, input.only, kind);
-      if (tag) {
-        filterTagIds.push(tag.id);
-        onlyName = tag.name ?? input.only;
-      } else {
-        notes.push(`Qloo has no category called "${input.only.slice(0, 40)}", so results are not limited to it.`);
-      }
+      if (tag) addTag(tag, input.only);
+      else notes.push(`Qloo has no category called "${input.only.slice(0, 40)}", so results are not limited to it.`);
     }
 
     const take = Math.min(Math.max(Math.round(Number(input.how_many)) || DEFAULT_TAKE, 1), DEFAULT_TAKE);
@@ -230,7 +241,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     const used = [
       likeNames.length ? `likes ${likeNames.join(", ")}` : undefined,
       tasteNames.length ? `tastes ${tasteNames.join(", ")}` : undefined,
-      onlyName ? `only ${onlyName}` : undefined,
+      onlyNames.length ? `only ${onlyNames.join(", ")}` : undefined,
     ].filter(Boolean);
 
     const text = [

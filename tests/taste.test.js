@@ -94,6 +94,36 @@ test("tastes become taste signals, and other kinds take the first tag", async ()
   assert.match(out.text, /tastes Sci-Fi/);
 });
 
+test("for places, a cuisine word is a filter, never a loose taste signal", async () => {
+  // Found with real Qloo answers: "ramen" as a signal returned bagels and a ballpark.
+  const ramen = [{ id: "urn:tag:genre:place:restaurant:ramen", name: "Ramen restaurant" }];
+  const qloo = pretendQloo({ tags: { ramen } });
+  const out = await runAskQloo({ qloo, input: { kind: "place", tastes: ["ramen"] }, context: { coords: denver } });
+  assert.deepEqual(qloo.asked.recommend[0].filterTagIds, ["urn:tag:genre:place:restaurant:ramen"]);
+  assert.deepEqual(qloo.asked.recommend[0].tagIds, []);
+  assert.match(out.text, /only Ramen restaurant/);
+  assert.doesNotMatch(out.text, /tastes Ramen/);
+});
+
+test("the same cuisine given twice is used once", async () => {
+  const ramen = [{ id: "urn:tag:genre:place:restaurant:ramen", name: "Ramen restaurant" }];
+  const qloo = pretendQloo({ tags: { ramen } });
+  await runAskQloo({ qloo, input: { kind: "place", tastes: ["ramen"], only: "ramen" }, context: { coords: denver } });
+  assert.deepEqual(qloo.asked.recommend[0].filterTagIds, ["urn:tag:genre:place:restaurant:ramen"]);
+});
+
+test("a cuisine filter and another taste can be used together", async () => {
+  const qloo = pretendQloo({
+    tags: {
+      ramen: [{ id: "urn:tag:genre:place:restaurant:ramen", name: "Ramen restaurant" }],
+      jazz: [{ id: "urn:tag:genre:media:jazz", name: "Jazz" }],
+    },
+  });
+  await runAskQloo({ qloo, input: { kind: "place", tastes: ["ramen", "jazz"] }, context: { coords: denver } });
+  assert.deepEqual(qloo.asked.recommend[0].filterTagIds, ["urn:tag:genre:place:restaurant:ramen"]);
+  assert.deepEqual(qloo.asked.recommend[0].tagIds, ["urn:tag:genre:media:jazz"]);
+});
+
 test("with no taste given, Claude is told the results are popular, not personal", async () => {
   const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place" }, context: { coords: denver } });
   assert.match(out.text, /popular rather than personal/);
