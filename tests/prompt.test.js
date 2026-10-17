@@ -102,3 +102,9 @@ test("a kind with an underscore is written as words", () => {
   assert.deepEqual(describeTaste([{ name: "Severance", kind: "tv_show", opinion: "like" }]).at(-1), "- Likes: Severance (tv show)");
   assert.deepEqual(describeTaste("not a list"), ["You don't know anything about this person's taste yet."]);
 });
+
+test("Nion is told to note a stated like or dislike even when it only answers with a question", () => {
+  const prompt = buildSystemPrompt({});
+  assert.match(prompt, /note it with remember_taste straight away, even if all you do next is ask them a question/);
+  assert.match(prompt, /If you are also using ask_qloo, call both in the same step/);
+});

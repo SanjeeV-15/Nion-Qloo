@@ -614,3 +614,7 @@ test("with no dislikes nothing is excluded and nothing extra is looked up", asyn
   assert.deepEqual(qloo.asked.recommend[0].excludeTagIds, []);
   assert.equal(qloo.asked.entities.length + qloo.asked.tags.length, 0);
 });
+
+test("the remember tool says to use it even when only a question is asked back", () => {
+  assert.match(rememberTasteTool().description, /even if you are only asking them a question back/);
+});

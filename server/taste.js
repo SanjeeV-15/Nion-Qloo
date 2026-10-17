@@ -66,7 +66,8 @@ export function rememberTasteTool() {
       "Note something the person has just told you about their taste, so you remember it next time: " +
       "a thing they like or dislike, or their yes or no to a taste you suggested. " +
       "Only use it for what the person actually said in this conversation, never for your own guesses. " +
-      "Call it in the same step as ask_qloo, and call it once per thing.",
+      "Call it as soon as they say it, even if you are only asking them a question back, and call it once per thing. " +
+      "If you are also using ask_qloo, call both in the same step.",
     input_schema: {
       type: "object",
       properties: {
