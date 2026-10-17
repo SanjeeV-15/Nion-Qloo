@@ -11,7 +11,6 @@
   "scripts": {
     "start": "node --env-file=.env server/index.js",
     "test": "node --test",
-    "tunnel": ".tools/cloudflared tunnel --url http://localhost:3000",
     "check:replies": "node --env-file=.env scripts/check-replies.mjs",
     "check:speed": "node --env-file=.env scripts/time-replies.mjs",
     "check:qloo": "node --env-file=.env scripts/check-qloo.mjs",

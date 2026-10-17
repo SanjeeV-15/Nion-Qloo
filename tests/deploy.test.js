@@ -35,3 +35,21 @@ test("every setting the server reads is described in .env.example", () => {
 test("the real key file is never tracked", () => {
   assert.match(read(".gitignore"), /^\.env$/m);
 });
+
+test("the README documents every setting and every check, and holds no key", () => {
+  const readme = read("README.md");
+  const example = read(".env.example");
+  // Every setting in .env.example (set or commented out) is explained in the README.
+  const settings = new Set([...example.matchAll(/^#?\s*([A-Z][A-Z_]+)=/gm)].map((m) => m[1]));
+  for (const name of settings) assert.ok(readme.includes(name), `${name} is not in the README`);
+  // Every script that still belongs to this version is mentioned.
+  for (const script of ["npm test", "npm run check:qloo", "npm run check:taste", "npm start"]) {
+    assert.ok(readme.includes(script), `${script} is not in the README`);
+  }
+  assert.doesNotMatch(readme, /sk-ant-[A-Za-z0-9_-]{10,}/);
+  assert.match(readme, /MIT/);
+});
+
+test("nothing in the repo points at tools that are not in it", () => {
+  assert.doesNotMatch(read("package.json"), /cloudflared|\.tools/);
+});

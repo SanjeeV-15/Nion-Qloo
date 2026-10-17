@@ -11,12 +11,10 @@ Some steps are yours alone (accounts, payment, typing your keys). Each step says
   while and takes about a minute to wake, which is a bad first impression for a judge.
 - Your two API keys, ready to type into Render. **Never paste them in a chat or into a file in the repo.**
 
-## 1. Before the first push (me, with your yes)
+## 1. Before the first push (done)
 
-Qloo asks that its response data is not published in the public repo. The files are clean now, but a few
-older local commits contain real place names in tests and commit messages. Before pushing, the history
-is cleaned (the names replaced with made-up ones) and the old copy kept as a backup branch. Nothing is
-pushed until you say yes.
+Qloo asks that its response data is not published in the public repo. The history was cleaned of real place
+names (replaced with made-up ones) and of private notes before anything was pushed. `git log -p` shows none.
 
 ## 2. Create the repo and push (you, or me with your yes)
 
