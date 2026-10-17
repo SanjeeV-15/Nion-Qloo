@@ -63,3 +63,8 @@ test("the README documents every setting and every check, and holds no key", () 
 test("nothing in the repo points at tools that are not in it", () => {
   assert.doesNotMatch(read("package.json"), /cloudflared|\.tools/);
 });
+
+test("the proxy depth is the one measured on Render, not the guess", () => {
+  assert.match(read("render.yaml"), /key: TRUST_PROXY_HOPS\s+value: "3"/);
+  assert.doesNotMatch(read("render.yaml"), /key: NION_IP_DEBUG/, "the diagnostic is switched on in the dashboard, never set in the file");
+});

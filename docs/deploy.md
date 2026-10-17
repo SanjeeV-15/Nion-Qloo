@@ -32,9 +32,10 @@ names (replaced with made-up ones) and of private notes before anything was push
 ## 4. Check it (me, once you give me the address)
 
 - The page loads, typing works, a taste question gets real picks, and the Maps link opens.
-- **How many proxies sit in front of the server.** Per-visitor limits need each visitor's real address. Set
-  `NION_IP_DEBUG=1` in Render for a minute, I call `/api/whoami` with a made-up address, read the number,
-  set `TRUST_PROXY_HOPS` to it, and turn the debug setting off.
+- **How many proxies sit in front of the server.** Per-visitor limits need each visitor's real address. On Render
+  this was measured with `NION_IP_DEBUG=1` and `/api/whoami`: the connection comes through a local proxy, Render's
+  and Cloudflare's, so `TRUST_PROXY_HOPS` is **3** (set in `render.yaml`). A value of 1 makes every visitor look like
+  Render's internal address. Turn `NION_IP_DEBUG` off afterwards (delete it in Render's Environment tab).
 
 ## 5. Keep your credit safe
 

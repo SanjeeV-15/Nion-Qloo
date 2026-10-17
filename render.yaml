@@ -28,6 +28,7 @@ services:
       - key: NION_TOTAL_BUDGET_USD
         value: "8"
       # How many proxies sit between a visitor and the server, so each visitor's address can be read.
-      # Check it once after deploying (see docs/deploy.md).
+      # Measured on Render with /api/whoami (NION_IP_DEBUG=1): the local proxy, Render and Cloudflare, so 3.
+      # (With 1, every visitor looked like Render's internal address.)
       - key: TRUST_PROXY_HOPS
-        value: "1"
+        value: "3"
