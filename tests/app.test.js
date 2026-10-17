@@ -941,3 +941,47 @@ test("pressing Stop when Nion is idle does nothing", async () => {
   await tick();
   assert.match(status(), /Waiting|Say/);
 });
+
+// ---------- found in a real debug log (speakers, no earphones) ----------
+
+test("'end the conversation' stuck on the end of Nion's own voice still ends it", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion what do you suggest");
+  fetches[0].reply("What sounds good right now? Something hearty, or something light?");
+  await tick();
+  await finishSpeaking();
+  const before = spoken.length;
+
+  // Chrome wrote Nion's last words and yours as one phrase. This used to be ignored, so you had to say it twice.
+  await hear("what sounds good right now something hearty or something light and the conversation");
+  assert.ok(spoken.length > before, "Nion answered");
+  assert.match(spoken.slice(before).join(" "), /talk soon/i);
+});
+
+test("hearing its own 'you can say end the conversation' back never ends the conversation", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion how do I stop you");
+  fetches[0].reply("You can say end the conversation whenever you're done.");
+  await tick();
+  await finishSpeaking();
+  const before = spoken.length;
+
+  await hear("you can say end the conversation whenever you're done");
+  assert.equal(spoken.length, before, "Nion said nothing new: it knew that was its own voice");
+});
+
+test("after ignoring its own voice, the icon goes back from 'listening' to waiting", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion what do you suggest");
+  fetches[0].reply("Something hearty or something light?");
+  await tick();
+  await finishSpeaking();
+  assert.match(status(), /still listening for a follow-up/);
+
+  // A misheard word of Nion's own voice ("like" for "light") flips the icon to listening...
+  await hear("something like", { final: false });
+  assert.match(status(), /Listening/);
+  // ...and when the phrase finishes and is ignored as an echo, it must not stay stuck there.
+  await hear("something hearty or something like");
+  assert.match(status(), /still listening for a follow-up/);
+});

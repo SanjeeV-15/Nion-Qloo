@@ -85,6 +85,41 @@ export function stripLeadingEcho(heard, spoken) {
   return skip >= 3 ? tokens.slice(skip).join(" ") : tokens.join(" ");
 }
 
+// Do these words appear in `spokenWords` as one unbroken run, in the same order? Chrome
+// often writes a word a little differently ("you're" as "your"), so a run of four or more
+// words may have one word wrong and still count.
+function appearsInRun(phraseWords, spokenWords) {
+  if (phraseWords.length === 0 || phraseWords.length > spokenWords.length) return false;
+  const allowedMistakes = phraseWords.length >= 4 ? 1 : 0;
+  for (let start = 0; start + phraseWords.length <= spokenWords.length; start++) {
+    const mistakes = phraseWords.filter((w, i) => !sameWord(w, spokenWords[start + i])).length;
+    if (mistakes <= allowedMistakes) return true;
+  }
+  return false;
+}
+
+/**
+ * Chrome sometimes glues what the person says onto the end of Nion's own voice
+ * ("...something light and the conversation"), and the whole phrase then looks like an
+ * echo and is ignored, so a command like "end the conversation" is lost. This looks at the
+ * last few words: if they are a command (`detect` says so) and are not Nion's own words in
+ * a row, they are the person's. Returns those words, or null.
+ *
+ * The "not Nion's own words in a row" check matters: if Nion itself says "you can say end
+ * the conversation", hearing that back must never end the conversation.
+ */
+export function commandAtEnd(heard, spoken, detect, { maxWords = 6 } = {}) {
+  const tokens = String(heard ?? "").trim().split(/\s+/).filter(Boolean);
+  const spokenWords = words(spoken);
+  for (let count = 1; count <= Math.min(maxWords, tokens.length); count++) {
+    const tail = tokens.slice(-count).join(" ");
+    if (!detect(tail)) continue;
+    if (appearsInRun(words(tail), spokenWords)) continue; // Nion said exactly this: it is an echo
+    return tail;
+  }
+  return null;
+}
+
 /**
  * Takes a phrase Nion said ("One moment.") out of what was heard, wherever it sits
  * ("use my location one moment"). Returns what is left, or "" if nothing is.

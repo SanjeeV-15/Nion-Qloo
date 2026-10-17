@@ -13,8 +13,8 @@
 // or speaking, it stops at once and listens to you, like a person would.
 
 import { decide } from "./conversation.js";
-import { parseUtterance } from "./wake.js";
-import { isEcho, isInterruption, stripLeadingEcho, stripPhrase } from "./echo.js";
+import { parseUtterance, detectCommand } from "./wake.js";
+import { isEcho, isInterruption, stripLeadingEcho, stripPhrase, commandAtEnd } from "./echo.js";
 import { createListener, speechInSupported } from "./speech-in.js";
 import { speak, stopSpeaking, speechOutSupported } from "./speech-out.js";
 import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste } from "./storage.js";
@@ -276,6 +276,7 @@ function renderPicks(suggestions, about) {
 // Say something. Listening stays on, so you can interrupt. With voice off (typing only) it
 // is shown as text and nothing is spoken.
 async function say(text, { then = "waiting" } = {}) {
+  trace("said", `“${text}”`); // so a debug log shows what Nion was saying when something overlaps
   showReply(text);
   if (!voiceActive) return true;
   const mine = ++turn;
@@ -349,7 +350,7 @@ function handleInterim(text) {
   const interrupting = busy && isInterruption(text, echo.text);
   if (text !== lastInterim) {
     lastInterim = text;
-    trace("interim", `“${text}”${busy ? (interrupting ? " (someone is talking)" : " (Nion's own voice, ignored)") : ""}`);
+    trace("interim", `“${text}”${busy ? (interrupting ? " (someone is talking)" : " (not an interruption yet: too short, or Nion's own words)") : ""}`);
   }
   if (interrupting) interrupt();
 
@@ -394,13 +395,23 @@ function handleHeard(text) {
   // Nion's own voice, coming back through the microphone, is not you talking.
   if (Date.now() < echo.until && !shortAnswer) {
     if (isEcho(text, echo.text)) {
-      trace("ignored", "Nion's own voice");
-      return;
-    }
-    const trimmed = stripLeadingEcho(text, echo.text);
-    if (trimmed !== text) {
-      trace("trimmed", `“${trimmed}”`);
-      text = trimmed;
+      // Chrome can glue what you say onto the end of Nion's own voice, which makes the whole
+      // phrase look like an echo. A command at the very end ("end the conversation") is still yours.
+      const command = commandAtEnd(text, echo.text, detectCommand);
+      if (!command) {
+        trace("ignored", "Nion's own voice");
+        // A misheard word of its own voice may have flipped the icon to "listening": put it back.
+        if (state === "listening" && session.awaiting === null) setState("waiting");
+        return;
+      }
+      trace("rescued", `“${command}” (your command was stuck on the end of Nion's own voice)`);
+      text = command;
+    } else {
+      const trimmed = stripLeadingEcho(text, echo.text);
+      if (trimmed !== text) {
+        trace("trimmed", `“${trimmed}”`);
+        text = trimmed;
+      }
     }
   }
 

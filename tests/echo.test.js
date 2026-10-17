@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isEcho, isInterruption, stripLeadingEcho, stripPhrase } from "../public/js/echo.js";
+import { isEcho, isInterruption, stripLeadingEcho, stripPhrase, commandAtEnd } from "../public/js/echo.js";
 import { detectCommand } from "../public/js/wake.js";
 
 const spoken = "It's 1:17 in the afternoon in Denver right now.";
@@ -109,4 +109,39 @@ test("stripPhrase takes Nion's phrase out of what was heard, wherever it is", ()
   assert.equal(stripPhrase("one moment what time is it", "One moment."), "what time is it");
   assert.equal(stripPhrase("one moment", "One moment."), "");
   assert.equal(stripPhrase("what time is it", "One moment."), "what time is it");
+});
+
+// ---------- a command stuck on the end of Nion's own voice (found in a real debug log) ----------
+
+const askedForTaste = "What sounds good right now? Something hearty, or something light?";
+
+test("your command is found at the end of Nion's own voice", () => {
+  // Real log, speakers, no earphones: Chrome wrote one phrase and Nion ignored all of it.
+  const heard = "what sounds good right now something hearty or something light and the conversation";
+  assert.equal(isEcho(heard, askedForTaste), true, "the whole phrase does look like an echo");
+  assert.equal(commandAtEnd(heard, askedForTaste, detectCommand), "and the conversation");
+});
+
+test("a clearly spoken command on its own is found too", () => {
+  assert.equal(commandAtEnd("end the conversation", askedForTaste, detectCommand), "end the conversation");
+  assert.equal(commandAtEnd("hmm okay goodbye", askedForTaste, detectCommand), "goodbye");
+});
+
+test("Nion's own words can never end the conversation, even a command it says itself", () => {
+  const said = "You can say end the conversation whenever you're done.";
+  assert.equal(commandAtEnd("you can say end the conversation whenever you're done", said, detectCommand), null);
+  assert.equal(commandAtEnd("end the conversation whenever you're done", said, detectCommand), null);
+  // Chrome's slightly different spelling of the same words is still Nion's voice.
+  assert.equal(commandAtEnd("you can say end the conversations whenever your done", said, detectCommand), null);
+});
+
+test("an echo with no command at the end gives nothing", () => {
+  assert.equal(commandAtEnd("what sounds good right now something hearty", askedForTaste, detectCommand), null);
+  assert.equal(commandAtEnd("", askedForTaste, detectCommand), null);
+  assert.equal(commandAtEnd(undefined, askedForTaste, detectCommand), null);
+});
+
+test("a command is only looked for at the very end, not in the middle of a long phrase", () => {
+  const heard = "end the conversation is what you could say and then some more words after it all";
+  assert.equal(commandAtEnd(heard, askedForTaste, detectCommand), null);
 });
