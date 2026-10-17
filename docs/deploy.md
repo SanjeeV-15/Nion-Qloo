@@ -56,5 +56,6 @@ names (replaced with made-up ones) and of private notes before anything was push
 
 - In `render.yaml` change `autoDeployTrigger` to `off` (or turn off auto-deploy in Render) so a late push
   cannot break a working demo.
+- The README links the live demo address. It stays the same when the plan changes, so nothing to update there.
 - Keep the service running until Nov 16. You can cancel it after the judging period.
 - Test once more in a fresh browser window with no saved taste, as a judge would.

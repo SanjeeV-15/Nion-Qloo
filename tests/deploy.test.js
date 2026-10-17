@@ -68,3 +68,9 @@ test("the proxy depth is the one measured on Render, not the guess", () => {
   assert.match(read("render.yaml"), /key: TRUST_PROXY_HOPS\s+value: "3"/);
   assert.doesNotMatch(read("render.yaml"), /key: NION_IP_DEBUG/, "the diagnostic is switched on in the dashboard, never set in the file");
 });
+
+test("the README has no unfinished marker and links the live demo", () => {
+  const readme = read("README.md");
+  assert.doesNotMatch(readme, /TODO/);
+  assert.match(readme, /\*\*Live demo:\*\* https:\/\/[a-z0-9-]+\.onrender\.com/);
+});

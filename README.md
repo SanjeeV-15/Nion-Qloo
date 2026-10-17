@@ -1,11 +1,11 @@
 # Nion
 
-> **TODO (author):** the overview paragraph goes here, in your own words. The rest of this file is
-> setup, usage and technical notes.
-
 Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com/). Nion is a voice-and-typing web app. It
 uses [Qloo](https://www.qloo.com/)'s taste data, through an agent built on Claude's tool use, to pick places,
 music, films, TV, books, podcasts, brands and travel destinations that fit what a person has told it they like.
+
+**Live demo:** https://nion-fv7m.onrender.com (open it in Chrome to talk to Nion, or type in any browser; press
+**Use a demo taste** to see personal picks without telling Nion anything first).
 
 ## What you need
 
