@@ -32,6 +32,7 @@ const el = {
   debug: document.getElementById("debug"),
   orb: document.getElementById("orb"),
   copylog: document.getElementById("copylog"),
+  stop: document.getElementById("stop"),
   tasteLine: document.getElementById("taste-line"),
   demoTaste: document.getElementById("demo-taste"),
   forgetTaste: document.getElementById("forget-taste"),
@@ -197,6 +198,7 @@ function setState(next) {
   state = next;
   el.status.textContent = statusText();
   showState(next); // the icon
+  el.stop.hidden = !(next === "speaking" || next === "thinking"); // Stop is there whenever Nion is busy
 }
 
 function showProblem(message) {
@@ -743,10 +745,23 @@ el.typed.addEventListener("submit", (event) => {
 });
 
 // A manual way to stop Nion, for when your voice can't be heard over its own (on
-// laptop speakers the microphone hears Nion too): press Escape, or tap the circle.
+// laptop speakers the microphone hears Nion too): press the Stop button, press Escape,
+// or tap the circle.
 function stopNion() {
-  if (state === "speaking" || state === "thinking") interrupt();
+  if (state !== "speaking" && state !== "thinking") return;
+  if (voiceActive) {
+    interrupt(); // stops talking and listens to you
+    return;
+  }
+  // Typing only: cancel the question, and put the icon and the screen back to rest.
+  const wasThinking = state === "thinking";
+  turn += 1;
+  abortAsk?.abort();
+  stopSpeaking();
+  if (wasThinking) showReply("Stopped.");
+  setState("off");
 }
+el.stop.addEventListener("click", stopNion);
 el.orb.addEventListener("click", stopNion);
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") stopNion();
@@ -784,3 +799,4 @@ if (!speechInSupported || !speechOutSupported) {
   showProblem("Talking to Nion works in Google Chrome. You can still type to Nion here.");
 }
 el.status.textContent = statusText();
+el.stop.hidden = true; // nothing to stop yet

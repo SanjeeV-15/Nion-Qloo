@@ -873,3 +873,71 @@ test("an empty box sends nothing", async () => {
   await typeIn("   ");
   assert.equal(fetches.length, 0);
 });
+
+// ---------- the Stop button ----------
+
+test("the Stop button shows only while Nion is thinking or speaking", async () => {
+  await startApp({ name: "Sanjeev" });
+  assert.equal(elements.stop.hidden, true, "nothing to stop while waiting");
+
+  await hear("hey nion what time is it in Denver");
+  assert.equal(elements.stop.hidden, false, "shown while thinking");
+  fetches[0].reply("It's one seventeen.");
+  await tick();
+  assert.equal(elements.stop.hidden, false, "shown while speaking");
+
+  await finishSpeaking();
+  assert.equal(elements.stop.hidden, true, "gone again once Nion has finished");
+});
+
+test("Stop while Nion is speaking cuts it off and listens, even if your voice cannot be heard", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion what time is it in Denver");
+  fetches[0].reply("It's one seventeen in Denver right now.");
+  await tick();
+  assert.equal(pending.length, 1, "Nion is speaking");
+
+  elements.stop.click();
+  await tick();
+  assert.equal(pending.length, 0, "the voice stopped");
+  assert.match(status(), /Listening/);
+  assert.equal(elements.stop.hidden, true);
+});
+
+test("Stop while Nion is thinking cancels the question", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion what are some places to eat around me");
+  assert.equal(fetches.length, 1);
+
+  elements.stop.click();
+  await tick();
+  assert.equal(fetches[0].aborted, true);
+  assert.match(status(), /Listening/);
+});
+
+test("Stop works when only typing: it cancels the question and rests the screen", async () => {
+  await startApp({ voice: false });
+  await typeIn("tell me something long");
+  assert.equal(elements.stop.hidden, false);
+
+  elements.stop.click();
+  await tick();
+  assert.equal(fetches[0].aborted, true);
+  assert.equal(iconState(), "off");
+  assert.equal(elements.reply.textContent, "Stopped.");
+  assert.equal(elements.stop.hidden, true);
+
+  // The question that was stopped does not come back, and the next one works.
+  await typeIn("hello again");
+  fetches[1].reply("Hi.");
+  await tick();
+  assert.equal(elements.reply.textContent, "Hi.");
+  assert.equal(iconState(), "off");
+});
+
+test("pressing Stop when Nion is idle does nothing", async () => {
+  await startApp({ name: "Sanjeev" });
+  elements.stop.click();
+  await tick();
+  assert.match(status(), /Waiting|Say/);
+});

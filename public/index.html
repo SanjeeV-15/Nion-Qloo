@@ -46,6 +46,9 @@
     <div class="actions">
       <button id="start" class="pill" type="button">Turn on Nion</button>
       <button id="convo" class="pill" type="button" hidden>Start conversation</button>
+      <!-- Shown only while Nion is speaking or thinking. Voice can't always cut in over Nion's own
+           voice (on laptop speakers the microphone hears both), so this always works. -->
+      <button id="stop" class="pill" type="button" aria-label="Stop Nion" hidden>Stop</button>
     </div>
 
     <!-- Typing works too, for anyone without a microphone or without Chrome. It goes to the same
