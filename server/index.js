@@ -146,6 +146,22 @@ app.post("/api/chat", async (req, res) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => {
+// (Express 5 also calls this when listening fails, with the error, so check for it.)
+const server = app.listen(port, (error) => {
+  if (error) return;
   console.log(`Nion is running. Open http://localhost:${port} in Chrome.`);
+});
+
+// If the port is taken (often by another copy of Nion, or another project), say so plainly
+// instead of looking as if it started.
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(
+      `\nNion can't start: port ${port} is already in use, probably by another program (or another copy of Nion).\n` +
+        `Use a different port, for example:  PORT=${port + 10} npm start\n`
+    );
+  } else {
+    console.error("\nNion can't start:", error.message, "\n");
+  }
+  process.exit(1);
 });

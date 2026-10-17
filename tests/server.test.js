@@ -274,3 +274,19 @@ test("if the map lookup is down, the person still gets an answer, using web sear
     for (const service of [claude, qloo]) service.server.close();
   }
 });
+
+test("if the port is already taken, the server says so plainly and does not pretend to be running", async () => {
+  const env = { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" };
+  const first = startServer(env, 3908);
+  try {
+    await waitFor(() => /Nion is running/.test(first.output()));
+    const second = startServer(env, 3908);
+    const [code] = await once(second.child, "exit");
+    assert.equal(code, 1);
+    assert.match(second.output(), /port 3908 is already in use/);
+    assert.match(second.output(), /PORT=3918 npm start/);
+    assert.doesNotMatch(second.output(), /Nion is running/);
+  } finally {
+    first.child.kill();
+  }
+});
