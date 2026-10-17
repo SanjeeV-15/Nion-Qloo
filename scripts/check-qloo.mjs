@@ -128,5 +128,27 @@ await step("11. Qloo's own reason: two liked items blended, places near Denver",
   return out.suggestions.map((p) => `${p.name}: ${p.because?.map((b) => `${b.name} ${Math.round(b.share * 100)}%`).join(", ") ?? "(no reason given)"}`);
 });
 
+await step("12. A food the person dislikes is left out: Japanese places near Denver, with and without 'sushi' disliked", async () => {
+  const ask = (dislikes) => runAskQloo({ qloo, input: { kind: "place", only: "japanese", how_many: 5 }, context: { coords: denver, coordsFrom: "gps", dislikes } });
+  const plain = await ask([]);
+  const without = await ask([{ name: "sushi", kind: "food" }]);
+  const sushiTagged = (out) => out.suggestions.filter((p) => p.tags.some((t) => /sushi/i.test(t))).length;
+  if (!without.suggestions.length) throw new Error("nothing came back once sushi was left out");
+  if (!without.about.avoid.includes("sushi")) throw new Error("the dislike was not applied");
+  return [
+    `without a dislike: ${plain.suggestions.length} places, ${sushiTagged(plain)} with a sushi tag`,
+    `sushi disliked:    ${without.suggestions.length} places, ${sushiTagged(without)} with a sushi tag (Qloo drops that exact tag, so a few may remain)`,
+  ];
+});
+
+await step("13. A film the person dislikes is left out: films for a Radiohead fan", async () => {
+  const base = await runAskQloo({ qloo, input: { kind: "movie", likes: [{ name: "Radiohead", kind: "artist" }] }, context: {} });
+  const hidden = base.suggestions[0].name;
+  const out = await runAskQloo({ qloo, input: { kind: "movie", likes: [{ name: "Radiohead", kind: "artist" }] }, context: { dislikes: [{ name: hidden, kind: "movie" }] } });
+  if (out.suggestions.some((p) => p.name === hidden)) throw new Error(`${hidden} was still recommended`);
+  if (out.suggestions.length < 4) throw new Error("the list was not filled up again");
+  return [`first pick without a dislike: ${hidden}`, `with it disliked, picks are: ${out.suggestions.map((p) => p.name).join(" | ")}`, `heading would say: leaving out ${out.about.avoid.join(", ")}`];
+});
+
 console.log(failures ? `\n${failures} step(s) failed.` : "\nAll steps worked.");
 process.exit(failures ? 1 : 0);

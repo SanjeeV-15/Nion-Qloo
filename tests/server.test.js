@@ -504,3 +504,42 @@ test("the address diagnostic is off unless asked for, and shows how many proxies
     behindOne?.stop();
   }
 });
+
+test("a dislike in the person's taste list reaches Qloo as an exclusion, through the whole server", async () => {
+  const claude = await pretendService(claudeThatAsksForPlaces());
+  const qloo = await pretendService((url) =>
+    url.pathname === "/v2/tags"
+      ? { success: true, results: { tags: [{ id: "urn:tag:genre:place:restaurant:sushi", name: "Sushi" }] } }
+      : qlooAnswer(url)
+  );
+  const osm = await pretendService(() => lisbonSearch);
+  const port = await freePort();
+  const { child, output } = startServer(
+    {
+      ANTHROPIC_API_KEY: "sk-ant-not-a-real-key",
+      QLOO_API_KEY: "qloo-not-a-real-key",
+      ANTHROPIC_BASE_URL: claude.url,
+      QLOO_BASE_URL: qloo.url,
+      NOMINATIM_URL: osm.url,
+    },
+    port
+  );
+  await waitFor(() => /Nion is running/.test(output()));
+  const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: [{ role: "user", content: "where should I eat?" }],
+      context: { taste: [{ name: "sushi", kind: "food", opinion: "dislike" }, { name: "ramen", kind: "food", opinion: "like" }] },
+      location: { text: "Lisbon" },
+    }),
+  });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+
+  const insights = qloo.seen.find((call) => call.url.pathname === "/v2/insights").url.searchParams;
+  assert.equal(insights.get("filter.exclude.tags"), "urn:tag:genre:place:restaurant:sushi");
+  assert.equal(insights.has("filter.exclude.entities"), false);
+  assert.deepEqual(data.about.avoid, ["sushi"], "the screen can say what was left out");
+  assert.match(JSON.stringify(claude.seen[1].body.messages), /leaving out what they dislike: sushi/);
+});

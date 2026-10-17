@@ -95,6 +95,7 @@ export function runRememberTaste(input) {
 const KIND_NAMES = Object.keys(KINDS);
 const MAX_LIKES = 3;
 const MAX_TASTES = 3;
+const MAX_DISLIKES = 3;
 const DEFAULT_TAKE = 5;
 const NEAR_RADIUS_M = 2500;
 const NAMED_PLACE_RADIUS_M = 3500; // around the middle of a city the person named
@@ -331,8 +332,9 @@ async function categoryCandidates(qloo, word) {
  * Runs one ask_qloo request from Claude.
  *   qloo:    the helper from createQloo
  *   input:   what Claude asked for (untrusted: it came from a model that read the person's words)
- *   context: { coords?: {lat, lon}, coordsFrom?: "gps" | "named", placeLabel?, timeZone?, geocode? }
+ *   context: { coords?: {lat, lon}, coordsFrom?: "gps" | "named", placeLabel?, timeZone?, geocode?, dislikes? }
  *            geocode(name) finds a named place on the map: { lat, lon, city, ... } or null
+ *            dislikes: what the person said they dislike, [{ name, kind }]; Qloo is told to leave these out
  * Returns { text, suggestions, isError }: `text` goes back to Claude, `suggestions` is for the screen.
  */
 export async function runAskQloo({ qloo, input, context = {} }) {
@@ -425,6 +427,30 @@ export async function runAskQloo({ qloo, input, context = {} }) {
       else notes.push(`Qloo has no category called "${input.only.slice(0, 40)}", so results are not limited to it.`);
     }
 
+    // What the person dislikes is left out by Qloo itself. A cuisine (food) only matters when recommending
+    // places; a named thing only matters for the same kind of thing; a genre is a tag that applies to anything.
+    // Qloo removes exactly the tag or item named, so this is a strong nudge, not a guarantee. What the
+    // person asks for right now always wins over an old dislike, so the two never cancel out to nothing.
+    const excludeEntityIds = [];
+    const excludeTagIds = [];
+    const avoidNames = [];
+    for (const dislike of (Array.isArray(context.dislikes) ? context.dislikes : []).slice(0, MAX_DISLIKES)) {
+      if (dislike?.kind === "food" || dislike?.kind === "genre") {
+        if (dislike.kind === "food" && kind !== "place") continue;
+        const tag = await tagFor(qloo, dislike.name, dislike.kind === "food" ? "place" : kind);
+        if (tag && !excludeTagIds.includes(tag.id) && !filterTagIds.includes(tag.id) && !tagIds.includes(tag.id)) {
+          excludeTagIds.push(tag.id);
+          avoidNames.push(String(dislike.name));
+        }
+      } else if (dislike?.kind === kind) {
+        const [found] = await qloo.searchEntities(dislike.name, kind, 1);
+        if (found && !entityIds.includes(found.id) && !excludeEntityIds.includes(found.id)) {
+          excludeEntityIds.push(found.id);
+          avoidNames.push(found.name);
+        }
+      }
+    }
+
     const take = Math.min(Math.max(Math.round(Number(input.how_many)) || DEFAULT_TAKE, 1), DEFAULT_TAKE);
     const ask = (radiusM) =>
       qloo.recommend({
@@ -432,6 +458,8 @@ export async function runAskQloo({ qloo, input, context = {} }) {
         entityIds,
         tagIds,
         filterTagIds,
+        excludeEntityIds,
+        excludeTagIds,
         place: wantsNearMe || wantsElsewhere ? coords : undefined,
         radiusM,
         take,
@@ -478,6 +506,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
       likeNames.length ? `likes ${likeNames.join(", ")}` : undefined,
       tasteNames.length ? `tastes ${tasteNames.join(", ")}` : undefined,
       onlyNames.length ? `only ${onlyNames.join(", ")}` : undefined,
+      avoidNames.length ? `leaving out what they dislike: ${avoidNames.join(", ")}` : undefined,
     ].filter(Boolean);
 
     // A city the person named gives the middle of that city, not their exact spot: say so.
@@ -496,7 +525,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     ].join("\n");
 
     // What these picks were based on, so the screen can say so honestly.
-    const about = { kind, likes: [...likeNames, ...tasteNames], only: onlyNames };
+    const about = { kind, likes: [...likeNames, ...tasteNames], only: onlyNames, avoid: avoidNames };
     return { text, suggestions, about, isError: false };
   } catch (error) {
     if (error instanceof QlooError) {

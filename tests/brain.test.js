@@ -236,7 +236,7 @@ test("the screen is told what the picks were based on", async () => {
     done("Try Noodle House."),
   ]);
   const result = await ask(createBrain({ client, qloo: pretendQloo({ results: [entity({ kind: "movie" })] }) }));
-  assert.deepEqual(result.about, { kind: "movie", likes: ["Radiohead"], only: [] });
+  assert.deepEqual(result.about, { kind: "movie", likes: ["Radiohead"], only: [], avoid: [] });
 });
 
 test("a named place and its coordinates reach Qloo, and 'near' can look somewhere else", async () => {
@@ -282,4 +282,21 @@ test("numbers that make no sense fall back to the names that were said", async (
   const { client } = pretendClaude([askQloo({ kind: "place" }), done("Try Noodle House. [[picks: 7]]")]);
   const result = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 1, lon: 2 } });
   assert.equal(result.suggestions.length, 1);
+});
+
+test("what the person said they dislike is handed to Qloo to leave out", async () => {
+  const { client } = pretendClaude([askQloo({ kind: "movie" }), done("Try Noodle House.")]);
+  const asked = [];
+  const qloo = {
+    ...pretendQloo(),
+    async searchEntities(name) { return [{ id: `ID-${name}`, name }]; },
+    async recommend(args) { asked.push(args); return [entity({ kind: "movie" })]; },
+  };
+  const taste = [
+    { name: "Moon", kind: "movie", opinion: "dislike" },
+    { name: "ramen", kind: "food", opinion: "like" },
+  ];
+  const result = await ask(createBrain({ client, qloo }), { context: { timeZone: "America/Denver", taste } });
+  assert.deepEqual(asked[0].excludeEntityIds, ["ID-Moon"]);
+  assert.deepEqual(result.about.avoid, ["Moon"]);
 });

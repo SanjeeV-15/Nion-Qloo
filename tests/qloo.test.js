@@ -308,3 +308,13 @@ test("a reason that is missing, broken or out of range is left out, never guesse
   const messy = normalizeEntity(explained([{ entity_id: "A", score: 7 }, { entity_id: 5, score: 0.5 }, { score: 0.2 }, null, { entity_id: "B", score: 0.3 }]));
   assert.deepEqual(messy.because, [{ id: "B", share: 0.3 }]);
 });
+
+test("what the person dislikes is sent to Qloo to leave out, and left out of the request when there is none", async () => {
+  const { qloo, calls } = qlooWith(() => ({ body: { success: true, results: { entities: [] } } }));
+  await qloo.recommend({ kind: "place", excludeEntityIds: ["A", "B"], excludeTagIds: ["urn:tag:genre:place:restaurant:sushi"] });
+  await qloo.recommend({ kind: "place" });
+  assert.equal(calls[0].url.searchParams.get("filter.exclude.entities"), "A,B");
+  assert.equal(calls[0].url.searchParams.get("filter.exclude.tags"), "urn:tag:genre:place:restaurant:sushi");
+  assert.equal(calls[1].url.searchParams.has("filter.exclude.entities"), false);
+  assert.equal(calls[1].url.searchParams.has("filter.exclude.tags"), false);
+});

@@ -350,7 +350,7 @@ test("what the picks were based on is reported for the screen", async () => {
     input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }], tastes: ["ramen", "jazz"] },
     context: { coords: denver },
   });
-  assert.deepEqual(out.about, { kind: "place", likes: ["Radiohead", "Jazz"], only: ["Ramen restaurant"] });
+  assert.deepEqual(out.about, { kind: "place", likes: ["Radiohead", "Jazz"], only: ["Ramen restaurant"], avoid: [] });
 });
 
 // ---------- somewhere other than where the person is ----------
@@ -529,4 +529,88 @@ test("a pick Qloo gave no reason for carries none, and Claude is not told one", 
   const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place" }, context: { coords: denver } });
   assert.equal("because" in out.suggestions[0], false);
   assert.doesNotMatch(out.text, /Qloo matched it through/);
+});
+
+// ---------- what the person dislikes is left out ----------
+
+const tagOf = (id) => ({ id, name: id.split(":").at(-1) });
+
+test("a food the person dislikes is excluded when recommending places", async () => {
+  const qloo = pretendQloo({ tags: { sushi: [tagOf("urn:tag:genre:place:restaurant:sushi")] } });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place" },
+    context: { coords: denver, dislikes: [{ name: "sushi", kind: "food" }] },
+  });
+  assert.deepEqual(qloo.asked.recommend[0].excludeTagIds, ["urn:tag:genre:place:restaurant:sushi"]);
+  assert.deepEqual(out.about.avoid, ["sushi"]);
+  assert.match(out.text, /leaving out what they dislike: sushi/);
+});
+
+test("a food dislike does not matter for films, but a genre dislike does", async () => {
+  const qloo = pretendQloo({ tags: { sushi: [tagOf("urn:tag:genre:place:restaurant:sushi")], horror: [tagOf("urn:tag:genre:media:horror")] } });
+  await runAskQloo({
+    qloo,
+    input: { kind: "movie" },
+    context: { dislikes: [{ name: "sushi", kind: "food" }, { name: "horror", kind: "genre" }] },
+  });
+  assert.deepEqual(qloo.asked.recommend[0].excludeTagIds, ["urn:tag:genre:media:horror"]);
+});
+
+test("a named thing the person dislikes is excluded when recommending the same kind of thing", async () => {
+  const qloo = pretendQloo({ entities: { Moon: "FILM-MOON" } });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "movie" },
+    context: { dislikes: [{ name: "Moon", kind: "movie" }, { name: "Radiohead", kind: "artist" }] },
+  });
+  assert.deepEqual(qloo.asked.recommend[0].excludeEntityIds, ["FILM-MOON"]);
+  assert.deepEqual(qloo.asked.entities, [{ name: "Moon", kind: "movie" }], "the artist dislike is not even looked up for films");
+  assert.deepEqual(out.about.avoid, ["Moon"]);
+});
+
+test("what is asked for right now wins over an old dislike", async () => {
+  // They disliked sushi once, but now ask for sushi: excluding it would leave nothing.
+  const qloo = pretendQloo({ tags: { sushi: [tagOf("urn:tag:genre:place:restaurant:sushi")] } });
+  await runAskQloo({
+    qloo,
+    input: { kind: "place", only: "sushi" },
+    context: { coords: denver, dislikes: [{ name: "sushi", kind: "food" }] },
+  });
+  assert.deepEqual(qloo.asked.recommend[0].excludeTagIds, []);
+  assert.deepEqual(qloo.asked.recommend[0].filterTagIds, ["urn:tag:genre:place:restaurant:sushi"]);
+
+  // The same for a named thing: asking for something like Moon does not also hide Moon.
+  const films = pretendQloo({ entities: { Moon: "FILM-MOON" } });
+  await runAskQloo({
+    qloo: films,
+    input: { kind: "movie", likes: [{ name: "Moon", kind: "movie" }] },
+    context: { dislikes: [{ name: "Moon", kind: "movie" }] },
+  });
+  assert.deepEqual(films.asked.recommend[0].excludeEntityIds, []);
+});
+
+test("only a few dislikes are looked up, to protect Qloo's monthly allowance", async () => {
+  const qloo = pretendQloo();
+  await runAskQloo({
+    qloo,
+    input: { kind: "movie" },
+    context: { dislikes: Array.from({ length: 8 }, (_, i) => ({ name: `Film ${i}`, kind: "movie" })) },
+  });
+  assert.equal(qloo.asked.entities.length, 3);
+});
+
+test("a dislike Qloo does not know is simply skipped", async () => {
+  const qloo = pretendQloo();
+  const out = await runAskQloo({ qloo, input: { kind: "movie" }, context: { dislikes: [{ name: "Unknown Film", kind: "movie" }] } });
+  assert.deepEqual(qloo.asked.recommend[0].excludeEntityIds, []);
+  assert.deepEqual(out.about.avoid, []);
+});
+
+test("with no dislikes nothing is excluded and nothing extra is looked up", async () => {
+  const qloo = pretendQloo();
+  await runAskQloo({ qloo, input: { kind: "place" }, context: { coords: denver } });
+  assert.deepEqual(qloo.asked.recommend[0].excludeEntityIds, []);
+  assert.deepEqual(qloo.asked.recommend[0].excludeTagIds, []);
+  assert.equal(qloo.asked.entities.length + qloo.asked.tags.length, 0);
 });

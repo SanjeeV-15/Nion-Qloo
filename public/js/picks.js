@@ -32,6 +32,8 @@ export function headingFor(about) {
   const parts = [];
   if (likes.length) parts.push(`Because you like ${joined(likes)}`);
   if (only.length) parts.push(`${likes.length ? "limited" : "Limited"} to ${joined(only).toLowerCase()}`);
+  const avoid = Array.isArray(about?.avoid) ? about.avoid.slice(0, 3) : [];
+  if (avoid.length) parts.push(`${parts.length ? "leaving" : "Leaving"} out ${joined(avoid)}`);
   return {
     title: NOUNS[about?.kind] ?? "Suggestions",
     because: parts.length ? parts.join(", ") : "Popular rather than personal",

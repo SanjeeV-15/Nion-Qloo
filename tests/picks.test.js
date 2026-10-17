@@ -83,3 +83,12 @@ test("with no reason from Qloo, nothing is claimed", () => {
   assert.equal(describePick({ ...pick, because: [] }, { kind: "place" }).because, "");
   assert.equal(describePick({ ...pick, because: [{ name: 5, share: "x" }, null] }, { kind: "place" }).because, "");
 });
+
+test("the heading says what was left out because the person dislikes it", () => {
+  assert.equal(
+    headingFor({ kind: "place", likes: ["Radiohead"], only: ["Ramen restaurant"], avoid: ["sushi"] }).because,
+    "Because you like Radiohead, limited to ramen restaurant, leaving out sushi"
+  );
+  assert.equal(headingFor({ kind: "movie", likes: [], only: [], avoid: ["Moon"] }).because, "Leaving out Moon", "a name keeps its capital letters");
+  assert.equal(headingFor({ kind: "movie", likes: [], only: [], avoid: [] }).because, "Popular rather than personal");
+});

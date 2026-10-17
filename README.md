@@ -51,8 +51,11 @@ The `.env` file is private: git ignores it and it must never be committed or sha
 | "Hey Nion, let's start a conversation" | Keeps listening until you say "end the conversation" |
 
 Replies are short and written to be heard. What Nion suggested also appears as a list under its answer, with a link
-that opens a map search. **Stop** (or Escape, or tapping the circle) cuts Nion off. A started conversation or a quick
-follow-up (within 15 seconds of an answer) needs no wake phrase.
+that opens a map search. When you have given Nion two or more things you like, each pick also shows Qloo's own
+breakdown of how much each one drove it. Things you have said you dislike are sent to Qloo to leave out, and the list
+says what was left out. Four suggestions under the typing box can be tapped to try Nion. **Stop** (or Escape, or
+tapping the circle) cuts Nion off. A started conversation or a quick follow-up (within 15 seconds of an answer) needs
+no wake phrase.
 
 ## How it works
 
@@ -69,7 +72,8 @@ Browser page  --- what you say or type, your taste list, your place --->  Node s
 ```
 
 - Claude turns what you say into a request for Qloo (names are looked up to get Qloo's IDs, then recommendations are
-  asked for near a point on the map), and turns the results into a short spoken answer.
+  asked for near a point on the map, with your likes as signals, your dislikes excluded, and Qloo's explanation of each
+  pick when two or more likes are blended), and turns the results into a short spoken answer.
 - A place you say or type is found on the map with OpenStreetMap, so Qloo can look near it.
 - Nion only says it knows your taste if you told it. The list is kept in your browser, sent with each question,
   and checked by the server before it reaches Claude.

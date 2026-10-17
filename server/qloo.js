@@ -252,10 +252,11 @@ export function createQloo({
      *   entityIds:  IDs of things they like (artists, films, places...)
      *   tagIds:     IDs of tastes they have (cuisines, genres...)
      *   filterTagIds: only return things that have these tags (for example one cuisine)
+     *   excludeEntityIds, excludeTagIds: never return these (what the person dislikes)
      *   place:      { lat, lon } to keep results near a spot (places and destinations only)
      *   radiusM:    how far from that spot, in metres
      */
-    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], place, radiusM = 2000, take = 5 }) {
+    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], excludeEntityIds = [], excludeTagIds = [], place, radiusM = 2000, take = 5 }) {
       const type = KINDS[kind];
       if (!type) throw new QlooError("bad_request", `Nion cannot recommend "${kind}".`);
 
@@ -265,6 +266,9 @@ export function createQloo({
         "signal.interests.entities": entityIds.join(","),
         "signal.interests.tags": tagIds.join(","),
         "filter.tags": filterTagIds.join(","),
+        // Things the person said they dislike. Qloo leaves out exactly these (and fills the list from further down).
+        "filter.exclude.entities": excludeEntityIds.join(","),
+        "filter.exclude.tags": excludeTagIds.join(","),
       };
       // With two or more liked items Qloo can say how much each one drove a pick. (With one, it would
       // always be "all of it", so it is not asked for.) It does not slow the answer measurably.

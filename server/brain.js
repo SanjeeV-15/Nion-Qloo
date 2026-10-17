@@ -106,7 +106,15 @@ export function createBrain({ client, qloo, geocode = geocodePlace, model: defau
           const outcome = await runAskQloo({
             qloo,
             input: block.input,
-            context: { coords, coordsFrom, placeLabel, timeZone: context?.timeZone, geocode },
+            context: {
+              coords,
+              coordsFrom,
+              placeLabel,
+              timeZone: context?.timeZone,
+              geocode,
+              // What the person has said they dislike (already checked by the server), for Qloo to leave out.
+              dislikes: (context?.taste ?? []).filter((t) => t.opinion === "dislike").map((t) => ({ name: t.name, kind: t.kind })),
+            },
           });
           if (outcome.suggestions.length > 0) {
             suggestions = outcome.suggestions;
