@@ -97,6 +97,7 @@ globalThis.fetch = (url, options) =>
     const respond = (data) => resolve({ ok: true, json: async () => data });
     const call = {
       body: JSON.parse(options.body),
+      headers: options.headers ?? {},
       aborted: false,
       reply: (text) => respond({ reply: text }),
       respond,
@@ -135,7 +136,7 @@ function makeElement() {
 }
 
 let appVersion = 0;
-async function startApp({ name, search = "", voice = true } = {}) {
+async function startApp({ name, search = "", voice = true, hostname } = {}) {
   for (const entry of scheduled) realClearTimeout(entry.timer); // timers of an earlier test
   scheduled.clear();
   storage = new Map();
@@ -149,7 +150,7 @@ async function startApp({ name, search = "", voice = true } = {}) {
   locationWorks = true;
   locationRequests = 0;
   locationCallbacks = null;
-  globalThis.location = { search };
+  globalThis.location = { search, hostname };
   globalThis.document = {
     getElementById: (id) => (elements[id] ??= makeElement()),
     createElement: () => makeElement(),
@@ -589,7 +590,7 @@ test("a 'one moment' that was already being spoken finishes before the trouble m
   assert.match(saidSoFar(), /trouble/);
 });
 
-test("when the API credit has run out, the screen says so, and Nion still only says the short message", async () => {
+test("when the API credit has run out, the owner's screen says so, and Nion tells a listener it is resting", async () => {
   await startApp({ name: "Sanjeev" });
   await hear("hey nion what is the latest news");
   fetches[0].serverError("credit");
@@ -597,8 +598,44 @@ test("when the API credit has run out, the screen says so, and Nion still only s
 
   assert.match(elements.problem.textContent, /credit has run out/i);
   assert.match(elements.problem.textContent, /Plans & Billing/);
-  assert.match(saidSoFar(), /having trouble reaching my sources/i);
-  assert.doesNotMatch(saidSoFar(), /credit/i, "billing details are not read out to a listener");
+  assert.match(saidSoFar(), /I'm resting for now/i);
+  assert.doesNotMatch(saidSoFar(), /credit|billing|key/i, "billing details are not read out to a listener");
+});
+
+test("on a public address, a visitor never sees billing details, only that Nion is resting", async () => {
+  await startApp({ name: "Sanjeev", hostname: "nion.example.com" });
+  await hear("hey nion what is the latest news");
+  fetches[0].serverError("credit");
+  await tick();
+  assert.equal(elements.problem.textContent, "");
+  assert.equal(elements.reply.textContent, "I'm resting for now. This demo has reached its limit for today, so please try again later.");
+});
+
+test("each limit the server reports has its own polite line", async () => {
+  const lines = {
+    "slow-down": /Give me a minute/,
+    full: /lot of questions right now/,
+    budget: /reached its limit for today/,
+    quota: /recommendation service has reached its limit/,
+  };
+  for (const [reason, pattern] of Object.entries(lines)) {
+    await startApp({ voice: false, hostname: "nion.example.com" });
+    await typeIn("anything");
+    fetches[0].serverError(reason);
+    await tick();
+    assert.match(elements.reply.textContent, pattern, reason);
+  }
+});
+
+test("every question carries the browser's anonymous visitor id, the same one each time", async () => {
+  await startApp({ voice: false });
+  await typeIn("first");
+  fetches[0].reply("One.");
+  await tick();
+  await typeIn("second");
+  const ids = fetches.map((call) => call.headers["X-Nion-Visitor"]);
+  assert.match(ids[0], /^[a-f0-9-]{36}$/i);
+  assert.equal(ids[0], ids[1]);
 });
 
 test("a rejected API key is explained on screen", async () => {

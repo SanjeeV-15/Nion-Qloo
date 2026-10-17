@@ -17,7 +17,7 @@ import { parseUtterance, detectCommand } from "./wake.js";
 import { isEcho, isInterruption, stripLeadingEcho, stripPhrase, commandAtEnd } from "./echo.js";
 import { createListener, speechInSupported } from "./speech-in.js";
 import { speak, stopSpeaking, speechOutSupported } from "./speech-out.js";
-import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste } from "./storage.js";
+import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste, getVisitorId } from "./storage.js";
 import { DEMO_TASTE, mergeLearned, tasteForRequest, summarizeTaste } from "./taste.js";
 import { headingFor, describePick } from "./picks.js";
 import { showState } from "./ui.js";
@@ -125,6 +125,22 @@ const FILLER_AFTER_MS = 2200;
 // sitting on "thinking" for ever. A web search normally takes under 10 seconds.
 const ASK_TIMEOUT_MS = 25000;
 const TROUBLE = "I'm having trouble reaching my sources. Please try again in a moment.";
+
+// What Nion says (and shows) when the server is protecting its limits. It is polite and
+// says nothing about money or keys, because the listener is a visitor, not the owner.
+const RESTING = {
+  "slow-down": "You've asked quite a lot in a short time. Give me a minute, then ask again.",
+  full: "I'm getting a lot of questions right now. Please try again in a moment.",
+  budget: "I'm resting for now. This demo has reached its limit for today, so please try again later.",
+  quota: "I'm resting for now. My recommendation service has reached its limit, so please try again later.",
+};
+// An out-of-credit or rejected key is the owner's problem; to a visitor it is the same as "resting".
+RESTING.credit = RESTING.budget;
+RESTING.key = RESTING.budget;
+
+// Only the person running Nion on their own computer should see billing details on screen.
+// (A page with no host name, as in the tests, counts as local.)
+const runningLocally = !location.hostname || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 
 // What to show on screen for the person running Nion, by the reason the server gives.
 const PROBLEM_TEXT = {
@@ -654,7 +670,7 @@ async function ask(question, oneShot, gps) {
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Nion-Visitor": getVisitorId() },
       signal: controller.signal,
       body: JSON.stringify({
         // Keep only the most recent turns so the request stays small.
@@ -710,12 +726,15 @@ async function ask(question, oneShot, gps) {
     thread.pop(); // the question got no answer, so take it back out
     if (mine !== turn) return; // that was us cancelling because you interrupted
     console.error(error);
+    const resting = RESTING[error?.reason];
+    // The owner, on their own computer, sees what to fix. A visitor just hears that Nion is resting.
     showProblem(
-      PROBLEM_TEXT[error?.reason] ??
-        "Nion couldn't get an answer. If this keeps happening, check the terminal where npm start is running."
+      runningLocally
+        ? PROBLEM_TEXT[error?.reason] ?? "Nion couldn't get an answer. If this keeps happening, check the terminal where npm start is running."
+        : ""
     );
     await fillerFinished(); // let a "one moment" finish before saying this
-    await say(TROUBLE);
+    await say(resting ?? TROUBLE);
   } finally {
     // Typing only: nothing else will move the icon off "thinking", so do it here.
     if (!voiceActive && mine === turn && state === "thinking") setState("off");

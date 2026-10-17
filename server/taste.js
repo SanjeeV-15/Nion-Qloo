@@ -242,7 +242,7 @@ const plain = (text) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-// "SAMPLE Ramen Bar - Union Station" is usually said as "Sample Ramen Bar", so the part
+// "Sample Ramen Bar - Union Station" is usually said as "Sample Ramen Bar", so the part
 // before a dash, colon or bracket counts as the name too.
 function nameVariants(name) {
   const short = plain(String(name).split(/\s[-\u2013\u2014:(]/)[0]);

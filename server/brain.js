@@ -20,6 +20,9 @@ import { geocodePlace } from "./place.js";
 // public demo. Change NION_MODEL in .env to try another one (for example claude-sonnet-5-5).
 const DEFAULT_MODEL = "claude-haiku-5-5";
 
+/** The model Nion is using right now (the setting, or Haiku), so the server can price answers. */
+export const currentModel = () => process.env.NION_MODEL || DEFAULT_MODEL;
+
 // A reply can take several rounds: a search can pause it, and each tool use is a round
 // trip. This caps how many, so one question can't run forever.
 const MAX_LEARNED_PER_TURN = 3;

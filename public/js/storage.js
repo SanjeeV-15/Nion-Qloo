@@ -30,6 +30,36 @@ export function clearName() {
   }
 }
 
+// ---------- a random id for this browser ----------
+//
+// Sent with each question so a busy server can slow down one visitor without affecting others.
+// It is random, tied to nothing about the person, and kept only in this browser.
+
+const VISITOR_KEY = "nion.visitor";
+let memoryId = null; // used if storage is switched off
+
+function makeId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  // Very old browsers: build one the same shape from random numbers.
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 3) | 8).toString(16);
+  });
+}
+
+export function getVisitorId() {
+  try {
+    let id = localStorage.getItem(VISITOR_KEY);
+    if (!id || !/^[a-f0-9-]{36}$/i.test(id)) {
+      id = makeId();
+      localStorage.setItem(VISITOR_KEY, id);
+    }
+    return id;
+  } catch {
+    return (memoryId ??= makeId());
+  }
+}
+
 // ---------- taste (what the person has said they like) ----------
 //
 // A short list of { name, kind, opinion } kept on this device and sent with each question,

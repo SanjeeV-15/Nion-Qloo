@@ -1,0 +1,31 @@
+# Tells Render how to run Nion (a "Blueprint"). It holds no secrets: the two API keys are
+# typed into Render's own secret fields when the service is first created, never into this file.
+services:
+  - type: web
+    name: nion
+    runtime: node
+    # The cheapest paid plan (it was called "Starter"). It stays awake, unlike the free plan,
+    # which sleeps after a while and takes about a minute to wake: a poor first impression for a judge.
+    plan: 0.5c-512mb
+    buildCommand: npm ci
+    # Render has no .env file, so Node reads the settings Render provides.
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    # A new version goes live on every push to the branch. Before judging starts, change this to
+    # "off" so a late change cannot break a working demo.
+    autoDeployTrigger: commit
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: QLOO_API_KEY
+        sync: false
+      # The most the demo may spend (an estimate): per day (resets at midnight UTC) and in total
+      # since the server last started. When either is reached Nion says it is resting.
+      - key: NION_DAILY_BUDGET_USD
+        value: "2"
+      - key: NION_TOTAL_BUDGET_USD
+        value: "8"
+      # How many proxies sit between a visitor and the server, so each visitor's address can be read.
+      # Check it once after deploying (see docs/deploy.md).
+      - key: TRUST_PROXY_HOPS
+        value: "1"

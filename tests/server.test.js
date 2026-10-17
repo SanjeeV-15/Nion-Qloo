@@ -164,7 +164,7 @@ test("the person's taste reaches Claude, cleaned, and what Claude learns comes b
 // ---------- a place the person says becomes a point on the map ----------
 
 // Starts a tiny pretend web service on this computer. `handle(url, body)` returns what to send back.
-async function pretendService(handle) {
+async function pretendService(handle, { headers = {}, delayMs = 0, status = () => 200 } = {}) {
   const seen = [];
   const server = http.createServer((req, res) => {
     let body = "";
@@ -172,8 +172,13 @@ async function pretendService(handle) {
     req.on("end", () => {
       const url = new URL(req.url, "http://localhost");
       seen.push({ url, body: body ? JSON.parse(body) : undefined });
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify(handle(url, seen.length, body ? JSON.parse(body) : undefined)));
+      const n = seen.length;
+      setTimeout(() => {
+        res.statusCode = status(n);
+        res.setHeader("content-type", "application/json");
+        for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
+        res.end(JSON.stringify(handle(url, n, body ? JSON.parse(body) : undefined)));
+      }, delayMs);
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -288,5 +293,185 @@ test("if the port is already taken, the server says so plainly and does not pret
     assert.doesNotMatch(second.output(), /Nion is running/);
   } finally {
     first.child.kill();
+  }
+});
+
+// ---------- protecting your credit when Nion is online ----------
+
+const plainClaude = (usage = { input_tokens: 10, output_tokens: 5 }) => () => ({
+  id: "m", type: "message", role: "assistant", model: "pretend", usage,
+  stop_reason: "end_turn", content: [{ type: "text", text: "Hello there." }],
+});
+
+const visitorA = "3f2b8c1e-5d6a-4e7b-9c0d-1a2b3c4d5e6f";
+const visitorB = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+
+async function runGuardTest(env, claudeService, body) {
+  const claude = claudeService ?? (await pretendService(plainClaude()));
+  const port = 3910 + Math.floor(Math.random() * 80);
+  const { child, output } = startServer(
+    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: claude.url, ...env },
+    port
+  );
+  await waitFor(() => /Nion is running/.test(output()));
+  const base = `http://127.0.0.1:${port}`;
+  const ask = (visitor, extraHeaders = {}) =>
+    fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(visitor ? { "X-Nion-Visitor": visitor } : {}), ...extraHeaders },
+      body: JSON.stringify(body ?? { messages: [{ role: "user", content: "hello" }], context: {} }),
+    });
+  return { base, ask, claude, stop: () => (child.kill(), claude.server.close()), output };
+}
+
+test("a visitor who asks too fast is told to slow down, and other visitors are not affected", async () => {
+  const t = await runGuardTest({ NION_VISITOR_PER_MINUTE: "2" });
+  try {
+    assert.equal((await t.ask(visitorA)).status, 200);
+    assert.equal((await t.ask(visitorA)).status, 200);
+    const blocked = await t.ask(visitorA);
+    assert.equal(blocked.status, 429);
+    assert.equal((await blocked.json()).reason, "slow-down");
+    assert.ok(Number(blocked.headers.get("retry-after")) >= 1);
+    assert.equal((await t.ask(visitorB)).status, 200, "someone else is fine");
+    assert.equal(t.claude.seen.length, 3, "the blocked question never reached Claude, so it cost nothing");
+  } finally {
+    t.stop();
+  }
+});
+
+test("a script with no visitor id is limited by its network address instead", async () => {
+  const t = await runGuardTest({ NION_VISITOR_PER_MINUTE: "1" });
+  try {
+    assert.equal((await t.ask(null)).status, 200);
+    assert.equal((await t.ask(null)).status, 429);
+    assert.equal((await t.ask("not-a-real-id")).status, 429, "a made-up id counts as no id");
+  } finally {
+    t.stop();
+  }
+});
+
+test("when the daily budget is used up, Nion rests instead of spending more", async () => {
+  // Each pretend answer uses 1,000 tokens in: a tiny cost, and the budget below is smaller than that.
+  const claude = await pretendService(plainClaude({ input_tokens: 1000, output_tokens: 0 }));
+  const t = await runGuardTest({ NION_DAILY_BUDGET_USD: "0.00005" }, claude);
+  try {
+    assert.equal((await t.ask(visitorA)).status, 200);
+    const resting = await t.ask(visitorB);
+    assert.equal(resting.status, 503);
+    assert.equal((await resting.json()).reason, "budget");
+    assert.equal(claude.seen.length, 1, "no money is spent once it is resting");
+    assert.match(t.output(), /about 0\.01 cents/, "the log shows what each answer cost");
+  } finally {
+    t.stop();
+  }
+});
+
+test("when Claude says the credit has run out, Nion rests for a while instead of asking again", async () => {
+  const claude = await pretendService(
+    () => ({ type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }),
+    { status: () => 400 }
+  );
+  const t = await runGuardTest({}, claude);
+  try {
+    const first = await t.ask(visitorA);
+    assert.equal(first.status, 502);
+    assert.equal((await first.json()).reason, "credit");
+    const callsAfterFirst = claude.seen.length;
+    const second = await t.ask(visitorB);
+    assert.equal(second.status, 503);
+    assert.equal((await second.json()).reason, "budget");
+    assert.equal(claude.seen.length, callsAfterFirst, "it did not try Claude again");
+  } finally {
+    t.stop();
+  }
+});
+
+test("when Qloo's monthly allowance is nearly used, Nion rests rather than fail halfway", async () => {
+  const claude = await pretendService(claudeThatAsksForPlaces({ kind: "movie", likes: [{ name: "Radiohead", kind: "artist" }] }));
+  const qloo = await pretendService(
+    (url) => (url.pathname === "/v2/insights"
+      ? { success: true, results: { entities: [{ name: "Moon", entity_id: "M1", subtype: "urn:entity:movie" }] } }
+      : { success: true, results: [{ name: "Radiohead", entity_id: "A1", types: ["urn:entity:artist"] }] }),
+    { headers: { "x-month-ratelimit-remaining": "40", "x-month-ratelimit-limit": "10000" } }
+  );
+  const port = 3995;
+  const { child, output } = startServer(
+    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: claude.url, QLOO_BASE_URL: qloo.url },
+    port
+  );
+  try {
+    await waitFor(() => /Nion is running/.test(output()));
+    const ask = (v) =>
+      fetch(`http://127.0.0.1:${port}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Nion-Visitor": v },
+        body: JSON.stringify({ messages: [{ role: "user", content: "films like Radiohead" }], context: {} }),
+      });
+    assert.equal((await ask(visitorA)).status, 200, "the first one is answered, and Qloo reports 40 calls left");
+    const resting = await ask(visitorB);
+    assert.equal(resting.status, 503);
+    assert.equal((await resting.json()).reason, "quota");
+  } finally {
+    child.kill();
+    claude.server.close();
+    qloo.server.close();
+  }
+});
+
+test("only so many questions are answered at once, and the rest are asked to wait", async () => {
+  const claude = await pretendService(plainClaude(), { delayMs: 400 });
+  const t = await runGuardTest({ NION_MAX_IN_FLIGHT: "1" }, claude);
+  try {
+    const [first, second] = await Promise.all([t.ask(visitorA), t.ask(visitorB)]);
+    const statuses = [first.status, second.status].sort();
+    assert.deepEqual(statuses, [200, 503]);
+    const busy = first.status === 503 ? first : second;
+    assert.equal((await busy.json()).reason, "full");
+    // Once the first is done, there is room again.
+    assert.equal((await t.ask(visitorA)).status, 200);
+  } finally {
+    t.stop();
+  }
+});
+
+test("pages and answers carry safe headers for a public site", async () => {
+  const t = await runGuardTest({});
+  try {
+    for (const url of [`${t.base}/`, `${t.base}/history.html`, `${t.base}/api/health`]) {
+      const response = await fetch(url);
+      const csp = response.headers.get("content-security-policy");
+      assert.match(csp, /default-src 'self'/, url);
+      assert.match(csp, /frame-ancestors 'none'/, url);
+      assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      assert.match(response.headers.get("permissions-policy"), /microphone=\(self\)/);
+    }
+  } finally {
+    t.stop();
+  }
+});
+
+test("the address diagnostic is off unless asked for, and shows how many proxies are trusted", async () => {
+  const off = await runGuardTest({});
+  try {
+    assert.equal((await fetch(`${off.base}/api/whoami`)).status, 404);
+  } finally {
+    off.stop();
+  }
+
+  const direct = await runGuardTest({ NION_IP_DEBUG: "1" });
+  const behindOne = await runGuardTest({ NION_IP_DEBUG: "1", TRUST_PROXY_HOPS: "1" });
+  try {
+    const fake = { "X-Forwarded-For": "203.0.113.7" };
+    const a = await (await fetch(`${direct.base}/api/whoami`, { headers: fake })).json();
+    assert.notEqual(a.ip, "203.0.113.7", "with no proxy trusted, a made-up header is ignored");
+    assert.equal(a.trustProxyHops, 0);
+    const b = await (await fetch(`${behindOne.base}/api/whoami`, { headers: fake })).json();
+    assert.equal(b.ip, "203.0.113.7", "with one proxy trusted, the address it reports is used");
+    assert.equal(b.forwardedFor, "203.0.113.7");
+  } finally {
+    direct.stop();
+    behindOne.stop();
   }
 });
