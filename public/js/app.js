@@ -36,6 +36,7 @@ const el = {
   tasteLine: document.getElementById("taste-line"),
   demoTaste: document.getElementById("demo-taste"),
   forgetTaste: document.getElementById("forget-taste"),
+  chips: document.getElementById("chips"),
   typed: document.getElementById("typed"),
   typedInput: document.getElementById("typed-input"),
   replyCard: document.getElementById("reply-card"),
@@ -766,6 +767,15 @@ function handleTyped(raw) {
   // The first question starts a conversation (and gets a greeting); the rest follow on from it.
   return ask(text, messages.length === 0);
 }
+
+// A tapped suggestion is asked exactly as if it had been typed (so it works with voice on or off).
+el.chips.addEventListener("click", (event) => {
+  const chip = event.target?.closest ? event.target.closest("[data-say]") : event.target;
+  const text = chip?.dataset?.say;
+  if (!text) return;
+  el.typedInput.value = "";
+  handleTyped(text);
+});
 
 el.typed.addEventListener("submit", (event) => {
   event.preventDefault();

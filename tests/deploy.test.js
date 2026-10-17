@@ -74,3 +74,13 @@ test("the README has no unfinished marker and links the live demo", () => {
   assert.doesNotMatch(readme, /TODO/);
   assert.match(readme, /\*\*Live demo:\*\* https:\/\/[a-z0-9-]+\.onrender\.com/);
 });
+
+test("the page offers a few things to try, each a real question the app can answer", () => {
+  const html = read("public/index.html");
+  const chips = [...html.matchAll(/class="chip"[^>]*data-say="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(chips.length >= 3 && chips.length <= 5, `expected 3 to 5 suggestions, found ${chips.length}`);
+  for (const text of chips) assert.ok(text.length > 3 && text.length <= 100, text);
+  // The labels say what they ask, so a visitor is never surprised.
+  for (const text of chips) assert.ok(html.includes(`>${text}</button>`), `${text} has a different label`);
+  assert.match(html, /role="group" aria-label="Things to try"/);
+});

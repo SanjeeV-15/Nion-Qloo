@@ -1022,3 +1022,46 @@ test("after ignoring its own voice, the icon goes back from 'listening' to waiti
   await hear("something hearty or something like");
   assert.match(status(), /still listening for a follow-up/);
 });
+
+// ---------- suggestions to tap ----------
+
+const tapChip = async (text) => {
+  elements.chips.handlers.click({ target: { dataset: { say: text } } });
+  await tick();
+};
+
+test("tapping a suggestion asks it, exactly as if it had been typed", async () => {
+  await startApp({ voice: false });
+  await tapChip("Music like Radiohead");
+  assert.equal(fetches.length, 1);
+  assert.equal(fetches[0].body.messages.at(-1).content, "Music like Radiohead");
+  assert.equal(elements["you-said"].textContent, "You: Music like Radiohead");
+  fetches[0].reply("Try these.");
+  await tick();
+  assert.equal(elements.reply.textContent, "Try these.");
+});
+
+test("a suggestion works with voice on, too, and is spoken", async () => {
+  await startApp({ name: "Sanjeev" });
+  await finishSpeaking();
+  await tapChip("I'm hungry");
+  fetches[0].reply("What kind of food do you love?");
+  await tick();
+  assert.match(spoken.at(-1), /What kind of food/);
+});
+
+test("tapping a second suggestion while the first is still being answered cancels the first", async () => {
+  await startApp({ voice: false });
+  await tapChip("I'm hungry");
+  await tapChip("Films like Blade Runner 2049");
+  assert.equal(fetches[0].aborted, true);
+  assert.equal(fetches[1].body.messages.at(-1).content, "Films like Blade Runner 2049");
+});
+
+test("tapping something that is not a suggestion does nothing", async () => {
+  await startApp({ voice: false });
+  elements.chips.handlers.click({ target: { dataset: {} } });
+  elements.chips.handlers.click({ target: {} });
+  await tick();
+  assert.equal(fetches.length, 0);
+});
