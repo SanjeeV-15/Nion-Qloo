@@ -437,6 +437,11 @@ main > * {
   color: var(--ink);
 }
 
+.pick-because {
+  color: var(--ink);
+  opacity: 0.8;
+}
+
 .pick-link {
   display: inline-block;
   margin-top: 6px;

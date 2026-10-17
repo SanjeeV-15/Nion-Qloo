@@ -190,7 +190,13 @@ export function distanceWords(meters, timeZone) {
 }
 
 /** One result, made ready for the screen and for Claude. */
-export function presentResult(entity, timeZone) {
+export function presentResult(entity, timeZone, anchorNames = new Map()) {
+  // Qloo's own reason: which of the person's liked items drove this pick, biggest first. Qloo says it by ID;
+  // the names come from what we looked up. Tiny shares are noise, so they are left out.
+  const because = (entity.because ?? [])
+    .map((b) => ({ name: anchorNames.get(b.id), share: b.share }))
+    .filter((b) => b.name && b.share >= 0.1)
+    .sort((a, b) => b.share - a.share);
   return {
     id: entity.id,
     name: entity.name,
@@ -201,6 +207,7 @@ export function presentResult(entity, timeZone) {
     rating: entity.rating,
     tags: entity.tags,
     location: entity.location,
+    ...(because.length > 0 ? { because } : {}),
   };
 }
 
@@ -276,6 +283,7 @@ function describeForClaude(item, number) {
     item.rating !== undefined ? `${item.rating} stars` : undefined,
     item.distance,
     item.fit ? `${item.fit} for them` : undefined,
+    item.because?.length ? `Qloo matched it through: ${item.because.map((b) => `${b.name} ${Math.round(b.share * 100)}%`).join(", ")}` : undefined,
     item.tags?.length ? `tags: ${item.tags.join(", ")}` : undefined,
   ].filter(Boolean);
   return `${number}. ${parts.join(" | ")}`;
@@ -368,12 +376,14 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     const notes = [];
     const entityIds = [];
     const likeNames = [];
+    const anchorNames = new Map(); // Qloo's ID for each liked item -> the name, to read Qloo's reasons back
     for (const like of (Array.isArray(input.likes) ? input.likes : []).slice(0, MAX_LIKES)) {
       const likeKind = KINDS[like?.kind] ? like.kind : kind;
       const [found] = await qloo.searchEntities(like?.name, likeKind, 1);
       if (found) {
         entityIds.push(found.id);
         likeNames.push(found.name);
+        anchorNames.set(found.id, found.name);
       } else {
         notes.push(`Qloo does not know "${String(like?.name).slice(0, 60)}", so it was not used.`);
       }
@@ -452,7 +462,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
 
     // Distances from the middle of a city are not distances from the person: leave them out.
     const suggestions = found.map((entity) => {
-      const item = presentResult(entity, context.timeZone);
+      const item = presentResult(entity, context.timeZone, anchorNames);
       if (coordsFrom === "named" && (wantsNearMe || wantsElsewhere)) delete item.distance;
       return item;
     });

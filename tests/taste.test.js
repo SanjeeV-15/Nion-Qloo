@@ -495,3 +495,38 @@ test("each result is numbered, and Claude is asked to say which numbers it named
   assert.match(out.text, /\[\[picks: N, N\]\]/);
   assert.match(out.text, /^1\. Noodle House/m);
 });
+
+// ---------- Qloo's own reason for each pick ----------
+
+test("Qloo's reason is turned into the names the person gave, biggest first, and put on each pick", async () => {
+  const qloo = pretendQloo({
+    entities: { Radiohead: "ART-1", "Blade Runner 2049": "FILM-1" },
+    results: [entity({ because: [{ id: "FILM-1", share: 0.46 }, { id: "ART-1", share: 0.54 }] })],
+  });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }, { name: "Blade Runner 2049", kind: "movie" }] },
+    context: { coords: denver },
+  });
+  assert.deepEqual(out.suggestions[0].because, [{ name: "Radiohead", share: 0.54 }, { name: "Blade Runner 2049", share: 0.46 }]);
+  assert.match(out.text, /Qloo matched it through: Radiohead 54%, Blade Runner 2049 46%/);
+});
+
+test("tiny shares and IDs that were not asked about are left out", async () => {
+  const qloo = pretendQloo({
+    entities: { Radiohead: "ART-1", "Blade Runner 2049": "FILM-1" },
+    results: [entity({ because: [{ id: "ART-1", share: 0.93 }, { id: "FILM-1", share: 0.05 }, { id: "SOMETHING-ELSE", share: 0.02 }] })],
+  });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }, { name: "Blade Runner 2049", kind: "movie" }] },
+    context: { coords: denver },
+  });
+  assert.deepEqual(out.suggestions[0].because, [{ name: "Radiohead", share: 0.93 }]);
+});
+
+test("a pick Qloo gave no reason for carries none, and Claude is not told one", async () => {
+  const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place" }, context: { coords: denver } });
+  assert.equal("because" in out.suggestions[0], false);
+  assert.doesNotMatch(out.text, /Qloo matched it through/);
+});

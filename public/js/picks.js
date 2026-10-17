@@ -53,6 +53,15 @@ function mapUrl(item, about) {
 
 const capital = (text) => (text ? text[0].toUpperCase() + text.slice(1) : text);
 
+/** "Radiohead (54%) and Blade Runner 2049 (46%)": Qloo's own breakdown of what drove a pick. */
+function becauseLine(because) {
+  const parts = (Array.isArray(because) ? because : [])
+    .filter((b) => typeof b?.name === "string" && Number.isFinite(b?.share))
+    .map((b) => `${b.name} (${Math.round(b.share * 100)}%)`);
+  if (parts.length === 0) return "";
+  return `Qloo matched this through ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0]}`;
+}
+
 /** One pick, ready to show: a name, a line of facts, why it fits, and where to look it up. */
 export function describePick(item, about) {
   const meta = [item.distance, item.price, Number.isFinite(item.rating) ? `${item.rating} stars` : undefined].filter(Boolean);
@@ -61,6 +70,7 @@ export function describePick(item, about) {
     detail: item.detail,
     meta: meta.join(" · "),
     why: item.fit ? `${capital(item.fit)} for you` : "",
+    because: becauseLine(item.because),
     tags: (item.tags ?? []).slice(0, 3).join(" · "),
     mapUrl: mapUrl(item, about),
   };

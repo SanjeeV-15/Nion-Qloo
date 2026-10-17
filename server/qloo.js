@@ -80,6 +80,15 @@ export function normalizeEntity(raw) {
       : undefined;
   const subtype = typeof raw.subtype === "string" ? raw.subtype.split(":").pop() : undefined;
 
+  // Qloo's own reason for a pick, when asked for: how much each liked item (by its ID) drove it.
+  // The shares add up to about 1. Anything unreadable is simply left out.
+  const shares = raw.query?.explainability?.["signal.interests.entities"];
+  const because = Array.isArray(shares)
+    ? shares
+        .filter((s) => typeof s?.entity_id === "string" && Number.isFinite(s?.score) && s.score >= 0 && s.score <= 1)
+        .map((s) => ({ id: s.entity_id, share: Number(s.score.toFixed(2)) }))
+    : [];
+
   return {
     id,
     name,
@@ -96,6 +105,7 @@ export function normalizeEntity(raw) {
       .filter(Boolean)
       .slice(0, 6),
     location,
+    because,
   };
 }
 
@@ -256,6 +266,9 @@ export function createQloo({
         "signal.interests.tags": tagIds.join(","),
         "filter.tags": filterTagIds.join(","),
       };
+      // With two or more liked items Qloo can say how much each one drove a pick. (With one, it would
+      // always be "all of it", so it is not asked for.) It does not slow the answer measurably.
+      if (entityIds.length >= 2) params["feature.explainability"] = "true";
       if (place && LOCATION_KINDS.has(kind)) {
         params["filter.location"] = pointWkt(place.lat, place.lon);
         params["filter.location.radius"] = Math.min(Math.max(Math.round(radiusM), 100), 50000);

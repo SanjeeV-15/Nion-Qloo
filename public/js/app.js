@@ -275,6 +275,7 @@ function renderPicks(suggestions, about) {
     add("p", "pick-name", pick.name);
     add("p", "pick-line", pick.meta);
     add("p", "pick-why", pick.why);
+    add("p", "pick-line pick-because", pick.because);
     add("p", "pick-line", pick.detail);
     add("p", "pick-line", pick.tags);
     if (pick.mapUrl) {

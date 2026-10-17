@@ -70,3 +70,16 @@ test("a name that looks like code is just words in the link, not a way out of it
   assert.ok(card.mapUrl.startsWith("https://www.google.com/maps/search/?api=1&query="));
   assert.doesNotMatch(card.mapUrl, /["<> ]/);
 });
+
+test("Qloo's own reason is shown as how much each liked item drove the pick", () => {
+  const card = describePick({ ...pick, because: [{ name: "Radiohead", share: 0.54 }, { name: "Blade Runner 2049", share: 0.46 }] }, { kind: "place" });
+  assert.equal(card.because, "Qloo matched this through Radiohead (54%) and Blade Runner 2049 (46%)");
+  const three = describePick({ ...pick, because: [{ name: "A", share: 0.5 }, { name: "B", share: 0.3 }, { name: "C", share: 0.2 }] }, { kind: "place" });
+  assert.equal(three.because, "Qloo matched this through A (50%), B (30%) and C (20%)");
+});
+
+test("with no reason from Qloo, nothing is claimed", () => {
+  assert.equal(describePick(pick, { kind: "place" }).because, "");
+  assert.equal(describePick({ ...pick, because: [] }, { kind: "place" }).because, "");
+  assert.equal(describePick({ ...pick, because: [{ name: 5, share: "x" }, null] }, { kind: "place" }).because, "");
+});

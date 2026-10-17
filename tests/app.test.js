@@ -1065,3 +1065,16 @@ test("tapping something that is not a suggestion does nothing", async () => {
   await tick();
   assert.equal(fetches.length, 0);
 });
+
+test("each pick shows Qloo's own reason, as text", async () => {
+  await startApp({ voice: false });
+  await typeIn("what would I like");
+  fetches[0].respond({
+    reply: "Try the museum.",
+    suggestions: [{ name: "Museum", because: [{ name: "Radiohead", share: 0.54 }, { name: "Blade Runner 2049", share: 0.46 }] }],
+    about: { kind: "place", likes: ["Radiohead", "Blade Runner 2049"], only: [] },
+  });
+  await tick();
+  const lines = elements["picks-list"].children[0].children.map((node) => node.textContent);
+  assert.ok(lines.includes("Qloo matched this through Radiohead (54%) and Blade Runner 2049 (46%)"), lines.join(" | "));
+});

@@ -2,17 +2,41 @@
 // things are wrong. Nothing here calls Claude for real: the "Claude" address is
 // pointed at a closed door, so these cost nothing and never need your key.
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import http from "node:http";
+import net from "node:net";
 
 const serverFile = new URL("../server/index.js", import.meta.url).pathname;
 const baseEnv = { PATH: process.env.PATH };
 
+// Everything a test starts is remembered here, and stopped when the file is done, even if a test
+// failed halfway. (A server left running used to leave an orphan behind and hang the next run.)
+const children = new Set();
+const services = new Set();
+after(() => {
+  for (const child of children) child.kill();
+  for (const service of services) service.close();
+});
+
+// Asks the computer for a port nobody is using, so tests never collide with each other or with
+// something left over from an earlier run.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
 function startServer(env, port) {
   const child = spawn(process.execPath, [serverFile], { env: { ...baseEnv, ...env, PORT: String(port) } });
+  children.add(child);
   let output = "";
   child.stdout.on("data", (chunk) => (output += chunk));
   child.stderr.on("data", (chunk) => (output += chunk));
@@ -29,7 +53,7 @@ async function waitFor(check, ms = 5000) {
 }
 
 test("without an API key the server refuses to start and says how to fix it", async () => {
-  const { child, output } = startServer({}, 3901);
+  const { child, output } = startServer({}, await freePort());
   const [code] = await once(child, "exit");
   assert.equal(code, 1);
   assert.match(output(), /ANTHROPIC_API_KEY is missing/);
@@ -37,7 +61,7 @@ test("without an API key the server refuses to start and says how to fix it", as
 });
 
 test("without a Qloo key the server refuses to start and says how to fix it", async () => {
-  const { child, output } = startServer({ ANTHROPIC_API_KEY: "sk-ant-not-a-real-key" }, 3904);
+  const { child, output } = startServer({ ANTHROPIC_API_KEY: "sk-ant-not-a-real-key" }, await freePort());
   const [code] = await once(child, "exit");
   assert.equal(code, 1);
   assert.match(output(), /QLOO_API_KEY is missing/);
@@ -45,7 +69,7 @@ test("without a Qloo key the server refuses to start and says how to fix it", as
 });
 
 test("when Claude can't be reached, the server answers with a clear problem, not a crash", async () => {
-  const port = 3902;
+  const port = await freePort();
   const { child, output } = startServer(
     { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" },
     port
@@ -79,7 +103,7 @@ test("when Claude can't be reached, the server answers with a clear problem, not
 });
 
 test("the server turns away messages that are too long or in the wrong order", async () => {
-  const port = 3903;
+  const port = await freePort();
   const { child, output } = startServer(
     { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" },
     port
@@ -118,8 +142,9 @@ test("the person's taste reaches Claude, cleaned, and what Claude learns comes b
     });
   });
   await new Promise((resolve) => pretendClaude.listen(0, "127.0.0.1", resolve));
+  services.add(pretendClaude);
 
-  const port = 3905;
+  const port = await freePort();
   const { child, output } = startServer(
     {
       ANTHROPIC_API_KEY: "sk-ant-not-a-real-key",
@@ -182,6 +207,7 @@ async function pretendService(handle, { headers = {}, delayMs = 0, status = () =
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  services.add(server);
   return { seen, server, url: `http://127.0.0.1:${server.address().port}` };
 }
 
@@ -207,7 +233,7 @@ test("a city the person says is found on the map, so Qloo looks near it", async 
   const claude = await pretendService(claudeThatAsksForPlaces());
   const qloo = await pretendService(qlooAnswer);
   const osm = await pretendService(() => lisbonSearch);
-  const port = 3906;
+  const port = await freePort();
   const { child, output } = startServer(
     {
       ANTHROPIC_API_KEY: "sk-ant-not-a-real-key",
@@ -252,7 +278,7 @@ test("a city the person says is found on the map, so Qloo looks near it", async 
 test("if the map lookup is down, the person still gets an answer, using web search for local places", async () => {
   const claude = await pretendService(claudeThatAsksForPlaces());
   const qloo = await pretendService(qlooAnswer);
-  const port = 3907;
+  const port = await freePort();
   const { child, output } = startServer(
     {
       ANTHROPIC_API_KEY: "sk-ant-not-a-real-key",
@@ -282,14 +308,15 @@ test("if the map lookup is down, the person still gets an answer, using web sear
 
 test("if the port is already taken, the server says so plainly and does not pretend to be running", async () => {
   const env = { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: "http://127.0.0.1:1" };
-  const first = startServer(env, 3908);
+  const port = await freePort();
+  const first = startServer(env, port);
   try {
     await waitFor(() => /Nion is running/.test(first.output()));
-    const second = startServer(env, 3908);
+    const second = startServer(env, port);
     const [code] = await once(second.child, "exit");
     assert.equal(code, 1);
-    assert.match(second.output(), /port 3908 is already in use/);
-    assert.match(second.output(), /PORT=3918 npm start/);
+    assert.match(second.output(), new RegExp(`port ${port} is already in use`));
+    assert.match(second.output(), new RegExp(`PORT=${port + 10} npm start`));
     assert.doesNotMatch(second.output(), /Nion is running/);
   } finally {
     first.child.kill();
@@ -308,7 +335,7 @@ const visitorB = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
 
 async function runGuardTest(env, claudeService, body) {
   const claude = claudeService ?? (await pretendService(plainClaude()));
-  const port = 3910 + Math.floor(Math.random() * 80);
+  const port = await freePort();
   const { child, output } = startServer(
     { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: claude.url, ...env },
     port
@@ -395,7 +422,7 @@ test("when Qloo's monthly allowance is nearly used, Nion rests rather than fail 
       : { success: true, results: [{ name: "Radiohead", entity_id: "A1", types: ["urn:entity:artist"] }] }),
     { headers: { "x-month-ratelimit-remaining": "40", "x-month-ratelimit-limit": "10000" } }
   );
-  const port = 3995;
+  const port = await freePort();
   const { child, output } = startServer(
     { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: claude.url, QLOO_BASE_URL: qloo.url },
     port
@@ -460,9 +487,11 @@ test("the address diagnostic is off unless asked for, and shows how many proxies
     off.stop();
   }
 
-  const direct = await runGuardTest({ NION_IP_DEBUG: "1" });
-  const behindOne = await runGuardTest({ NION_IP_DEBUG: "1", TRUST_PROXY_HOPS: "1" });
+  let direct;
+  let behindOne;
   try {
+    direct = await runGuardTest({ NION_IP_DEBUG: "1" });
+    behindOne = await runGuardTest({ NION_IP_DEBUG: "1", TRUST_PROXY_HOPS: "1" });
     const fake = { "X-Forwarded-For": "203.0.113.7" };
     const a = await (await fetch(`${direct.base}/api/whoami`, { headers: fake })).json();
     assert.notEqual(a.ip, "203.0.113.7", "with no proxy trusted, a made-up header is ignored");
@@ -471,7 +500,7 @@ test("the address diagnostic is off unless asked for, and shows how many proxies
     assert.equal(b.ip, "203.0.113.7", "with one proxy trusted, the address it reports is used");
     assert.equal(b.forwardedFor, "203.0.113.7");
   } finally {
-    direct.stop();
-    behindOne.stop();
+    direct?.stop();
+    behindOne?.stop();
   }
 });

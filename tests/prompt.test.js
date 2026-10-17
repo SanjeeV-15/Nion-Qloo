@@ -75,6 +75,8 @@ test("Nion's instructions say how to use Qloo for recommendations", () => {
   assert.match(prompt, /somewhere other than where they are now.*near set to that place/);
   assert.match(prompt, /end your reply with \[\[picks: N, N\]\]/);
   assert.match(prompt, /never say it aloud/);
+  assert.match(prompt, /Qloo matched it through one of their likes, you can say which one in words/);
+  assert.match(prompt, /Never say the percentages/);
 });
 
 test("with no taste, Nion is told it knows nothing about the person", () => {

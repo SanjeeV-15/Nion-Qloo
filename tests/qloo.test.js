@@ -112,6 +112,7 @@ test("turns Qloo's answer into the few things Nion needs", async () => {
     rating: 4.5,
     tags: ["Ramen", "Casual"],
     location: { lat: 39.74, lon: -104.99 },
+    because: [],
   });
 });
 
@@ -276,4 +277,34 @@ test("a map point is written longitude first and checked", () => {
   assert.equal(pointWkt(39.7392, -104.9903), "POINT(-104.9903 39.7392)");
   assert.throws(() => pointWkt(91, 0), (e) => e.code === "bad_request");
   assert.throws(() => pointWkt(NaN, 0), (e) => e.code === "bad_request");
+});
+
+// ---------- Qloo's own reason for a pick ----------
+
+const explained = (shares) => ({ name: "Museum", entity_id: "P1", subtype: "urn:entity:place", query: { explainability: { "signal.interests.entities": shares } } });
+
+test("with two or more liked items Qloo is asked for its reason", async () => {
+  const { qloo, calls } = qlooWith(() => ({ body: { success: true, results: { entities: [] } } }));
+  await qloo.recommend({ kind: "place", entityIds: ["A", "B"] });
+  assert.equal(calls[0].url.searchParams.get("feature.explainability"), "true");
+});
+
+test("with one liked item, or none, the reason is not asked for (it would always be all of it)", async () => {
+  const { qloo, calls } = qlooWith(() => ({ body: { success: true, results: { entities: [] } } }));
+  await qloo.recommend({ kind: "place", entityIds: ["A"] });
+  await qloo.recommend({ kind: "place" });
+  assert.equal(calls[0].url.searchParams.has("feature.explainability"), false);
+  assert.equal(calls[1].url.searchParams.has("feature.explainability"), false);
+});
+
+test("Qloo's reason is read as how much each liked item drove the pick", () => {
+  const pick = normalizeEntity(explained([{ entity_id: "A", score: 0.5446 }, { entity_id: "B", score: 0.4554 }]));
+  assert.deepEqual(pick.because, [{ id: "A", share: 0.54 }, { id: "B", share: 0.46 }]);
+});
+
+test("a reason that is missing, broken or out of range is left out, never guessed", () => {
+  assert.deepEqual(normalizeEntity({ name: "x", entity_id: "1" }).because, []);
+  assert.deepEqual(normalizeEntity(explained("not a list")).because, []);
+  const messy = normalizeEntity(explained([{ entity_id: "A", score: 7 }, { entity_id: 5, score: 0.5 }, { score: 0.2 }, null, { entity_id: "B", score: 0.3 }]));
+  assert.deepEqual(messy.because, [{ id: "B", share: 0.3 }]);
 });

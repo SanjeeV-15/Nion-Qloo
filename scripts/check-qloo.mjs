@@ -116,5 +116,17 @@ await step("10. A place that does not exist", async () => {
   return [out.text];
 });
 
+await step("11. Qloo's own reason: two liked items blended, places near Denver", async () => {
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }, { name: "Blade Runner 2049", kind: "movie" }] },
+    context: { coords: denver, coordsFrom: "gps", timeZone: "America/Denver" },
+  });
+  if (!out.suggestions.length) throw new Error("no places came back");
+  const explained = out.suggestions.filter((p) => p.because?.length);
+  if (!explained.length) throw new Error("Qloo gave no reason for any pick");
+  return out.suggestions.map((p) => `${p.name}: ${p.because?.map((b) => `${b.name} ${Math.round(b.share * 100)}%`).join(", ") ?? "(no reason given)"}`);
+});
+
 console.log(failures ? `\n${failures} step(s) failed.` : "\nAll steps worked.");
 process.exit(failures ? 1 : 0);

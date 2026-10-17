@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node --env-file=.env server/index.js",
-    "test": "node --test",
+    "test": "node --test --test-timeout=60000",
     "check:replies": "node --env-file=.env scripts/check-replies.mjs",
     "check:speed": "node --env-file=.env scripts/time-replies.mjs",
     "check:qloo": "node --env-file=.env scripts/check-qloo.mjs",
