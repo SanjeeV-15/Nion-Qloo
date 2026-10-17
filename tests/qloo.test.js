@@ -318,3 +318,37 @@ test("what the person dislikes is sent to Qloo to leave out, and left out of the
   assert.equal(calls[1].url.searchParams.has("filter.exclude.entities"), false);
   assert.equal(calls[1].url.searchParams.has("filter.exclude.tags"), false);
 });
+
+test("the quality bias is sent only when asked for, and only for places", async () => {
+  const { qloo, calls } = qlooWith(() => ({ body: { success: true, results: { entities: [] } } }));
+  await qloo.recommend({ kind: "place", qualityBias: true });
+  await qloo.recommend({ kind: "place" });
+  await qloo.recommend({ kind: "movie", qualityBias: true });
+  assert.equal(calls[0].url.searchParams.get("bias.quality"), "medium");
+  assert.equal(calls[1].url.searchParams.has("bias.quality"), false);
+  assert.equal(calls[2].url.searchParams.has("bias.quality"), false, "films have no quality ranking");
+});
+
+test("a place's opening hours are kept, and a place without them has none", () => {
+  const withHours = normalizeEntity(place({ properties: { hours: { tuesday: [{ opens: "T10:00:00", closes: "T17:00:00", closed: false }] } } }));
+  assert.deepEqual(withHours.hours.tuesday, [{ opens: 600, closes: 1020 }]);
+  assert.equal("hours" in normalizeEntity(place()), false);
+});
+
+test("a response with no allowance headers does not read as 'no calls left'", async () => {
+  // A missing header must stay unknown. (Number(null) is 0, which once made Nion think the month was used up.)
+  const { qloo } = qlooWith(() => ({ body: { success: true, results: { entities: [] } } }));
+  await qloo.recommend({ kind: "place" });
+  assert.deepEqual(qloo.quota(), { monthRemaining: undefined, monthLimit: undefined });
+
+  // A real header still counts, and a later response without one does not erase it.
+  let withHeaders = true;
+  const { qloo: later } = qlooWith(() => ({
+    headers: withHeaders ? { "x-month-ratelimit-remaining": "9000", "x-month-ratelimit-limit": "10000" } : {},
+    body: { success: true, results: { entities: [] } },
+  }));
+  await later.recommend({ kind: "place" });
+  withHeaders = false;
+  await later.recommend({ kind: "place" });
+  assert.deepEqual(later.quota(), { monthRemaining: 9000, monthLimit: 10000 });
+});

@@ -9,6 +9,7 @@
 // Everything Qloo returns is untrusted text, so it is labelled as data for Claude.
 
 import { KINDS, QlooError, pickTag } from "./qloo.js";
+import { openStatus, timeZoneFor } from "./hours.js";
 
 export const ASK_QLOO = "ask_qloo";
 export const REMEMBER_TASTE = "remember_taste";
@@ -161,6 +162,10 @@ export function askQlooTool() {
             "For places only: a different place to look near, instead of where the person is now. Use it when they ask about somewhere else, " +
             "for example Lisbon or Shibuya, Tokyo. Leave it out for \"near me\".",
         },
+        open_now: {
+          type: "boolean",
+          description: "For places only: set true when they want somewhere open right now or late. Places that are open come first.",
+        },
         how_many: { type: "integer", minimum: 1, maximum: 5, description: "How many results, up to five. Default five." },
       },
       required: ["kind"],
@@ -192,9 +197,11 @@ export function distanceWords(meters, timeZone) {
 }
 
 /** One result, made ready for the screen and for Claude. */
-export function presentResult(entity, timeZone, anchorNames = new Map()) {
+export function presentResult(entity, timeZone, anchorNames = new Map(), now = new Date()) {
   // Qloo's own reason: which of the person's liked items drove this pick, biggest first. Qloo says it by ID;
   // the names come from what we looked up. Tiny shares are noise, so they are left out.
+  // Open now, by the local time at the place itself (so right for Lisbon even when the person is in Denver).
+  const status = openStatus(entity.hours, timeZoneFor(entity.location, timeZone), now);
   const because = (entity.because ?? [])
     .map((b) => ({ name: anchorNames.get(b.id), share: b.share }))
     .filter((b) => b.name && b.share >= 0.1)
@@ -210,6 +217,7 @@ export function presentResult(entity, timeZone, anchorNames = new Map()) {
     tags: entity.tags,
     location: entity.location,
     ...(because.length > 0 ? { because } : {}),
+    ...(status ? { open: status.open, hours: status.label } : {}),
   };
 }
 
@@ -284,11 +292,38 @@ function describeForClaude(item, number) {
     item.price,
     item.rating !== undefined ? `${item.rating} stars` : undefined,
     item.distance,
+    item.hours ? item.hours.replace(/^./, (c) => c.toLowerCase()) : undefined,
     item.fit ? `${item.fit} for them` : undefined,
     item.because?.length ? `Qloo matched it through: ${item.because.map((b) => `${b.name} ${Math.round(b.share * 100)}%`).join(", ")}` : undefined,
     item.tags?.length ? `tags: ${item.tags.join(", ")}` : undefined,
   ].filter(Boolean);
   return `${number}. ${parts.join(" | ")}`;
+}
+
+// The same place can come back twice (Qloo can list one place under two entries): keep the first.
+function uniquePicks(list) {
+  const seen = new Set();
+  return list.filter((entity) => {
+    const key = `${entity.name.toLowerCase()}|${(entity.detail ?? "").toLowerCase()}`;
+    if (seen.has(entity.id) || seen.has(key)) return false;
+    seen.add(entity.id);
+    seen.add(key);
+    return true;
+  });
+}
+
+// Looks up one thing the person dislikes. Returns { tag }, { found } or null if it does not apply here.
+async function lookUpDislike(qloo, dislike, kind) {
+  if (dislike?.kind === "food" || dislike?.kind === "genre") {
+    if (dislike.kind === "food" && kind !== "place") return null;
+    const tag = await tagFor(qloo, dislike.name, dislike.kind === "food" ? "place" : kind);
+    return tag ? { tag } : null;
+  }
+  if (dislike?.kind === kind) {
+    const [found] = await qloo.searchEntities(dislike.name, kind, 1);
+    return found ? { found } : null;
+  }
+  return null;
 }
 
 async function tagFor(qloo, word, kind) {
@@ -380,17 +415,6 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     const entityIds = [];
     const likeNames = [];
     const anchorNames = new Map(); // Qloo's ID for each liked item -> the name, to read Qloo's reasons back
-    for (const like of (Array.isArray(input.likes) ? input.likes : []).slice(0, MAX_LIKES)) {
-      const likeKind = KINDS[like?.kind] ? like.kind : kind;
-      const [found] = await qloo.searchEntities(like?.name, likeKind, 1);
-      if (found) {
-        entityIds.push(found.id);
-        likeNames.push(found.name);
-        anchorNames.set(found.id, found.name);
-      } else {
-        notes.push(`Qloo does not know "${String(like?.name).slice(0, 60)}", so it was not used.`);
-      }
-    }
 
     // A cuisine or restaurant category ("ramen") works best as a filter: Qloo's real answers
     // showed that as a loose taste signal it returns bagels and a ballpark, and mixed with a
@@ -416,16 +440,40 @@ export async function runAskQloo({ qloo, input, context = {} }) {
       }
     };
 
-    for (const word of (Array.isArray(input.tastes) ? input.tastes : []).slice(0, MAX_TASTES)) {
-      const tag = await tagFor(qloo, word, kind);
-      if (tag) addTag(tag, word);
-      else notes.push(`Qloo has no taste called "${String(word).slice(0, 40)}", so it was not used.`);
-    }
+    const likesAsked = (Array.isArray(input.likes) ? input.likes : []).slice(0, MAX_LIKES);
+    const tastesAsked = (Array.isArray(input.tastes) ? input.tastes : []).slice(0, MAX_TASTES);
+    const onlyAsked = kind === "place" && typeof input.only === "string" && input.only.trim() ? input.only : undefined;
+    const dislikesAsked = (Array.isArray(context.dislikes) ? context.dislikes : []).slice(0, MAX_DISLIKES);
 
-    if (kind === "place" && typeof input.only === "string" && input.only.trim()) {
-      const tag = await tagFor(qloo, input.only, kind);
-      if (tag) addTag(tag, input.only);
-      else notes.push(`Qloo has no category called "${input.only.slice(0, 40)}", so results are not limited to it.`);
+    // Every name and tag lookup is independent of the others, so they are all started together. (The helper spaces
+    // the calls out to stay under Qloo's five a second, and measured against real Qloo that spacing is the
+    // bottleneck, so this is not faster for quick lookups; it only helps if one of them is slow.)
+    const [likeFound, tasteTags, onlyTag, dislikeFound] = await Promise.all([
+      Promise.all(likesAsked.map((like) => qloo.searchEntities(like?.name, KINDS[like?.kind] ? like.kind : kind, 1))),
+      Promise.all(tastesAsked.map((word) => tagFor(qloo, word, kind))),
+      onlyAsked ? tagFor(qloo, onlyAsked, kind) : undefined,
+      Promise.all(dislikesAsked.map((dislike) => lookUpDislike(qloo, dislike, kind))),
+    ]);
+
+    likesAsked.forEach((like, i) => {
+      const [found] = likeFound[i];
+      if (found) {
+        entityIds.push(found.id);
+        likeNames.push(found.name);
+        anchorNames.set(found.id, found.name);
+      } else {
+        notes.push(`Qloo does not know "${String(like?.name).slice(0, 60)}", so it was not used.`);
+      }
+    });
+
+    tastesAsked.forEach((word, i) => {
+      if (tasteTags[i]) addTag(tasteTags[i], word);
+      else notes.push(`Qloo has no taste called "${String(word).slice(0, 40)}", so it was not used.`);
+    });
+
+    if (onlyAsked) {
+      if (onlyTag) addTag(onlyTag, onlyAsked);
+      else notes.push(`Qloo has no category called "${onlyAsked.slice(0, 40)}", so results are not limited to it.`);
     }
 
     // What the person dislikes is left out by Qloo itself. A cuisine (food) only matters when recommending
@@ -435,24 +483,26 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     const excludeEntityIds = [];
     const excludeTagIds = [];
     const avoidNames = [];
-    for (const dislike of (Array.isArray(context.dislikes) ? context.dislikes : []).slice(0, MAX_DISLIKES)) {
-      if (dislike?.kind === "food" || dislike?.kind === "genre") {
-        if (dislike.kind === "food" && kind !== "place") continue;
-        const tag = await tagFor(qloo, dislike.name, dislike.kind === "food" ? "place" : kind);
-        if (tag && !excludeTagIds.includes(tag.id) && !filterTagIds.includes(tag.id) && !tagIds.includes(tag.id)) {
-          excludeTagIds.push(tag.id);
+    dislikesAsked.forEach((dislike, i) => {
+      const hit = dislikeFound[i];
+      if (hit?.tag) {
+        if (!excludeTagIds.includes(hit.tag.id) && !filterTagIds.includes(hit.tag.id) && !tagIds.includes(hit.tag.id)) {
+          excludeTagIds.push(hit.tag.id);
           avoidNames.push(String(dislike.name));
         }
-      } else if (dislike?.kind === kind) {
-        const [found] = await qloo.searchEntities(dislike.name, kind, 1);
-        if (found && !entityIds.includes(found.id) && !excludeEntityIds.includes(found.id)) {
-          excludeEntityIds.push(found.id);
-          avoidNames.push(found.name);
+      } else if (hit?.found) {
+        if (!entityIds.includes(hit.found.id) && !excludeEntityIds.includes(hit.found.id)) {
+          excludeEntityIds.push(hit.found.id);
+          avoidNames.push(hit.found.name);
         }
       }
-    }
+    });
 
     const take = Math.min(Math.max(Math.round(Number(input.how_many)) || DEFAULT_TAKE, 1), DEFAULT_TAKE);
+    const wantOpen = kind === "place" && input.open_now === true;
+    // Ask for a few extra places: Qloo can list one place twice, and if "open now" was asked for, some of the
+    // closest may be closed. The list is cut back to the number wanted below.
+    const fetchCount = kind === "place" ? (wantOpen ? 10 : take + 3) : take;
     const ask = (radiusM) =>
       qloo.recommend({
         kind,
@@ -461,9 +511,11 @@ export async function runAskQloo({ qloo, input, context = {} }) {
         filterTagIds,
         excludeEntityIds,
         excludeTagIds,
+        // With no cuisine filter (that is where a Thai place slipped into a ramen list), let ratings count.
+        qualityBias: kind === "place" && filterTagIds.length === 0,
         place: wantsNearMe || wantsElsewhere ? coords : undefined,
         radiusM,
-        take,
+        take: fetchCount,
       });
 
     const firstRadius = coordsFrom === "named" ? NAMED_PLACE_RADIUS_M : NEAR_RADIUS_M;
@@ -490,11 +542,23 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     }
 
     // Distances from the middle of a city are not distances from the person: leave them out.
-    const suggestions = found.map((entity) => {
-      const item = presentResult(entity, context.timeZone, anchorNames);
+    const now = context.now ?? new Date();
+    let suggestions = uniquePicks(found).map((entity) => {
+      const item = presentResult(entity, context.timeZone, anchorNames, now);
       if (coordsFrom === "named" && (wantsNearMe || wantsElsewhere)) delete item.distance;
       return item;
     });
+
+    // "Open now": the open places first, in Qloo's order; and an honest note when none can be shown as open.
+    if (wantOpen) {
+      const openOnes = suggestions.filter((item) => item.open === true);
+      const knownHours = suggestions.filter((item) => item.open !== undefined).length;
+      suggestions = [...openOnes, ...suggestions.filter((item) => item.open !== true)];
+      if (knownHours === 0) notes.push("Qloo has no opening hours for these places, so you cannot say what is open now.");
+      else if (openOnes.length === 0) notes.push("None of the closest places is open right now: say so, and say when the nearest one opens.");
+      else notes.push(`${openOnes.length} of these ${openOnes.length === 1 ? "is" : "are"} open now, and they are listed first.`);
+    }
+    suggestions = suggestions.slice(0, take);
     if (suggestions.length === 0) {
       return {
         text: "Qloo found nothing for that. Say so plainly and offer to try something different." + (notes.length ? " " + notes.join(" ") : ""),

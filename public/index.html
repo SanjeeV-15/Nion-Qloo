@@ -72,6 +72,15 @@
       <p id="reply" class="reply" aria-live="polite"></p>
     </div>
 
+    <!-- Shown only while Nion is waiting to be told where you are: one tap instead of typing. Tapping one is the
+         same as typing or saying it. -->
+    <div id="place-chips" class="chips" role="group" aria-label="Where are you?" hidden>
+      <button class="chip" type="button" data-say="use my location">Use my location</button>
+      <button class="chip" type="button" data-say="New York">New York</button>
+      <button class="chip" type="button" data-say="Lisbon">Lisbon</button>
+      <button class="chip" type="button" data-say="Tokyo">Tokyo</button>
+    </div>
+
     <!-- What Nion recommended, listed quietly under what it said. Filled in by app.js, as text only. -->
     <section id="picks" class="picks" aria-label="What Nion suggested" hidden>
       <h2 id="picks-title" class="picks-title"></h2>

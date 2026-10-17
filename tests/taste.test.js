@@ -51,6 +51,7 @@ test("the tool tells Claude what it is for and what it needs", () => {
   assert.ok(tool.input_schema.properties.kind.enum.includes("movie"));
   assert.ok(!tool.input_schema.properties.kind.enum.includes("video_game"));
   assert.match(tool.description, /Never invent a taste/);
+  assert.equal(tool.input_schema.properties.open_now.type, "boolean");
 });
 
 test("a named thing is looked up and used as the taste", async () => {
@@ -166,11 +167,152 @@ test("if even the wider area is empty, Claude is told to say so", async () => {
 });
 
 test("how many results is kept to five at most", async () => {
+  const many = Array.from({ length: 12 }, (_, i) => entity({ id: `P${i}`, name: `Place ${i}`, detail: `${i} Example St` }));
+  const places = pretendQloo({ results: many });
+  const twenty = await runAskQloo({ qloo: places, input: { kind: "place", how_many: 20 }, context: { coords: denver } });
+  const zero = await runAskQloo({ qloo: places, input: { kind: "place", how_many: 0 }, context: { coords: denver } });
+  assert.equal(twenty.suggestions.length, 5);
+  assert.equal(zero.suggestions.length, 5, "an unusable number falls back to five");
+
+  // For anything that is not a place, five is also what is asked of Qloo.
+  const films = pretendQloo();
+  await runAskQloo({ qloo: films, input: { kind: "movie", how_many: 20 }, context: {} });
+  assert.equal(films.asked.recommend[0].take, 5);
+});
+
+test("places are asked for with a few extra, to allow for duplicates, then cut back to what was wanted", async () => {
+  const qloo = pretendQloo({ results: Array.from({ length: 8 }, (_, i) => entity({ id: `P${i}`, name: `Place ${i}`, detail: `${i} Example St` })) });
+  const out = await runAskQloo({ qloo, input: { kind: "place", how_many: 3 }, context: { coords: denver } });
+  assert.equal(qloo.asked.recommend[0].take, 6, "3 wanted, 3 extra asked for");
+  assert.equal(out.suggestions.length, 3);
+});
+
+test("the same place listed twice by Qloo is shown once", async () => {
+  const dup = [
+    entity({ id: "A", name: "Botanic Gardens", detail: "1 Garden Way" }),
+    entity({ id: "B", name: "Botanic Gardens", detail: "1 Garden Way" }),
+    entity({ id: "C", name: "Art Museum", detail: "2 Art St" }),
+    entity({ id: "A", name: "Botanic Gardens", detail: "elsewhere" }),
+  ];
+  const out = await runAskQloo({ qloo: pretendQloo({ results: dup }), input: { kind: "place" }, context: { coords: denver } });
+  assert.deepEqual(out.suggestions.map((p) => p.name), ["Botanic Gardens", "Art Museum"]);
+});
+
+test("ratings count in the ranking of places, but not when a cuisine filter is used", async () => {
+  // With a cuisine filter, real answers showed the quality bias letting a Thai place into a ramen list.
+  const ramen = [{ id: "urn:tag:genre:place:restaurant:ramen", name: "Ramen restaurant" }];
+  const filtered = pretendQloo({ tags: { ramen } });
+  await runAskQloo({ qloo: filtered, input: { kind: "place", only: "ramen" }, context: { coords: denver } });
+  assert.equal(filtered.asked.recommend[0].qualityBias, false);
+
+  const unfiltered = pretendQloo({ entities: { Radiohead: "ART-1" } });
+  await runAskQloo({ qloo: unfiltered, input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }] }, context: { coords: denver } });
+  assert.equal(unfiltered.asked.recommend[0].qualityBias, true);
+
+  const films = pretendQloo();
+  await runAskQloo({ qloo: films, input: { kind: "movie" }, context: {} });
+  assert.equal(films.asked.recommend[0].qualityBias, false, "only places have a quality ranking");
+});
+
+test("the lookups for likes, tastes, a category and dislikes are made at the same time, not one after another", async () => {
+  // A pretend Qloo that is slow to answer a name lookup, and records how many were waiting at once.
+  let waiting = 0;
+  let mostAtOnce = 0;
+  const slow = async (value) => {
+    waiting += 1;
+    mostAtOnce = Math.max(mostAtOnce, waiting);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    waiting -= 1;
+    return value;
+  };
+  const qloo = {
+    ...pretendQloo(),
+    searchEntities: (name) => slow([{ id: `ID-${name}`, name }]),
+    searchTags: (word) => slow([{ id: `urn:tag:genre:media:${word}`, name: word }]),
+  };
+  await runAskQloo({
+    qloo,
+    input: { kind: "movie", likes: [{ name: "A", kind: "artist" }, { name: "B", kind: "artist" }], tastes: ["x", "y"] },
+    context: { dislikes: [{ name: "Z", kind: "movie" }] },
+  });
+  assert.ok(mostAtOnce >= 4, `expected the lookups to overlap, but at most ${mostAtOnce} were waiting at once`);
+});
+
+// ---------- open now ----------
+
+// 20 October 2026 is a Tuesday; Denver is UTC-6, so 16:30 UTC is 10:30 there and 17:30 in Lisbon.
+const nowAt = (utcHour, utcMinute = 0) => new Date(Date.UTC(2026, 9, 20, utcHour, utcMinute));
+const dayHours = (opens, closes) => ({
+  sunday: [], monday: [{ opens, closes }], tuesday: [{ opens, closes }], wednesday: [{ opens, closes }],
+  thursday: [{ opens, closes }], friday: [{ opens, closes }], saturday: [{ opens, closes }],
+});
+const denverPlace = (over) => entity({ location: { lat: 39.74, lon: -104.99 }, ...over });
+
+test("each place says whether it is open now, by the local time at the place", () => {
+  const open = presentResult(denverPlace({ hours: dayHours(600, 1020) }), "America/Denver", new Map(), nowAt(16, 30));
+  assert.equal(open.open, true);
+  assert.equal(open.hours, "Open until 5 pm");
+  const shut = presentResult(denverPlace({ hours: dayHours(600, 1020) }), "America/Denver", new Map(), nowAt(2, 0));
+  assert.equal(shut.open, false);
+  assert.match(shut.hours, /^Closed now, opens/);
+});
+
+test("a place with no hours says nothing about being open, and a time zone is found from its coordinates", () => {
+  const none = presentResult(denverPlace(), "America/Denver", new Map(), nowAt(16, 30));
+  assert.equal("open" in none, false);
+  assert.equal("hours" in none, false);
+  // The person is in Denver (UTC-6) but the place is in Lisbon, where 16:30 UTC is 17:30: closed at 5 pm.
+  const lisbon = presentResult(entity({ location: { lat: 38.7, lon: -9.14 }, hours: dayHours(600, 1020) }), "America/Denver", new Map(), nowAt(16, 30));
+  assert.equal(lisbon.open, false);
+});
+
+test("'open now' puts the open places first and says how many are open", async () => {
+  const picks = [
+    denverPlace({ id: "1", name: "Closed Cafe", detail: "1 St", hours: dayHours(660, 840) }),
+    denverPlace({ id: "2", name: "Open Bistro", detail: "2 St", hours: dayHours(600, 1320) }),
+    denverPlace({ id: "3", name: "No Hours Diner", detail: "3 St" }),
+  ];
+  const out = await runAskQloo({
+    qloo: pretendQloo({ results: picks }),
+    input: { kind: "place", open_now: true },
+    context: { coords: denver, timeZone: "America/Denver", now: nowAt(21, 0) }, // 15:00 in Denver
+  });
+  assert.equal(out.suggestions[0].name, "Open Bistro");
+  assert.deepEqual(out.suggestions.map((p) => p.name), ["Open Bistro", "Closed Cafe", "No Hours Diner"]);
+  assert.match(out.text, /1 of these is open now, and they are listed first/);
+  assert.match(out.text, /open until 10 pm/);
+});
+
+test("'open now' asks for more places, since some of the closest may be closed", async () => {
   const qloo = pretendQloo();
-  await runAskQloo({ qloo, input: { kind: "place", how_many: 20 }, context: { coords: denver } });
-  await runAskQloo({ qloo, input: { kind: "place", how_many: 0 }, context: { coords: denver } });
+  await runAskQloo({ qloo, input: { kind: "place", open_now: true }, context: { coords: denver, now: nowAt(21, 0) } });
+  assert.equal(qloo.asked.recommend[0].take, 10);
+});
+
+test("if nothing is open, Claude is told to say so and say when it opens, not to pretend", async () => {
+  const picks = [denverPlace({ id: "1", name: "Closed Cafe", detail: "1 St", hours: dayHours(660, 840) })];
+  const out = await runAskQloo({
+    qloo: pretendQloo({ results: picks }),
+    input: { kind: "place", open_now: true },
+    context: { coords: denver, timeZone: "America/Denver", now: nowAt(8, 0) }, // 02:00 in Denver
+  });
+  assert.match(out.text, /None of the closest places is open right now/);
+  assert.match(out.text, /closed now, opens at 11 am/);
+});
+
+test("if no place has opening hours, 'open now' says it cannot be checked", async () => {
+  const out = await runAskQloo({
+    qloo: pretendQloo({ results: [denverPlace()] }),
+    input: { kind: "place", open_now: true },
+    context: { coords: denver, now: nowAt(21, 0) },
+  });
+  assert.match(out.text, /no opening hours for these places/);
+});
+
+test("'open now' means nothing for films", async () => {
+  const qloo = pretendQloo();
+  await runAskQloo({ qloo, input: { kind: "movie", open_now: true }, context: {} });
   assert.equal(qloo.asked.recommend[0].take, 5);
-  assert.equal(qloo.asked.recommend[1].take, 5, "an unusable number falls back to five");
 });
 
 test("only a few likes and tastes are looked up, to protect Qloo's monthly allowance", async () => {

@@ -41,11 +41,12 @@ The `.env` file is private: git ignores it and it must never be committed or sha
 
 | Say or type | What happens |
 |---|---|
-| "Hey Nion, I'm hungry" | With no taste known, Nion asks one short question ("What kind of food do you love?"). With a known taste, it says it back and asks yes or no |
+| "Hey Nion, I'm hungry" | With no taste known, Nion asks one short question ("What kind of food do you love?"). With a known taste, it goes straight to picks and says what it based them on |
 | "Music like Radiohead" | Artists that fit, from Qloo |
 | "I loved Blade Runner 2049. What should I watch next?" | Films from Qloo |
 | "I love Radiohead. Where would I love to travel?" | Destinations from Qloo |
 | "What would I like in Lisbon?" | Places near Lisbon, even if you are somewhere else |
+| "Somewhere open right now" | Places that are open now come first, each with when it closes or opens, by the local time at the place |
 | "I'm in Miami" (when Nion asks where you are) | Places around the middle of Miami |
 | "What's the latest world news?" | One web search, with the source named |
 | "Hey Nion, let's start a conversation" | Keeps listening until you say "end the conversation" |
@@ -53,7 +54,7 @@ The `.env` file is private: git ignores it and it must never be committed or sha
 Replies are short and written to be heard. What Nion suggested also appears as a list under its answer, with a link
 that opens a map search. When you have given Nion two or more things you like, each pick also shows Qloo's own
 breakdown of how much each one drove it. Things you have said you dislike are sent to Qloo to leave out, and the list
-says what was left out. Four suggestions under the typing box can be tapped to try Nion. **Stop** (or Escape, or
+says what was left out. Four suggestions under the typing box can be tapped to try Nion, and when Nion needs to know where you are, so can "Use my location" and three sample cities. **Stop** (or Escape, or
 tapping the circle) cuts Nion off. A started conversation or a quick follow-up (within 15 seconds of an answer) needs
 no wake phrase.
 
@@ -75,6 +76,10 @@ Browser page  --- what you say or type, your taste list, your place --->  Node s
   asked for near a point on the map, with your likes as signals, your dislikes excluded, and Qloo's explanation of each
   pick when two or more likes are blended), and turns the results into a short spoken answer.
 - A place you say or type is found on the map with OpenStreetMap, so Qloo can look near it.
+- Whether a place is open is worked out from the opening hours Qloo returns, using the local time at the place
+  (found from its coordinates with [tz-lookup](https://github.com/photostructure/tz-lookup), public domain).
+- When there is no cuisine filter, ratings count in how places are ranked (Qloo's `bias.quality`); a place Qloo lists
+  twice is shown once. A few of the demo's likely lookups are made at startup so the first question is quicker.
 - Nion only says it knows your taste if you told it. The list is kept in your browser, sent with each question,
   and checked by the server before it reaches Claude.
 
@@ -102,6 +107,7 @@ Everything is optional except the two keys. The names and defaults are in `.env.
 | `NION_MAX_IN_FLIGHT` | Questions answered at once | 6 |
 | `NION_QLOO_RESERVE` | Rest when this few of Qloo's monthly calls are left | 150 |
 | `TRUST_PROXY_HOPS`, `NION_IP_DEBUG` | Reading a visitor's address behind a host's proxy | 0, off |
+| `NION_WARMUP` | Look up the demo's likely items at startup so the first question is quicker (0 turns it off) | on |
 
 ## Tests and checks
 
@@ -141,6 +147,6 @@ See [docs/deploy.md](docs/deploy.md). A `render.yaml` is included.
 
 ## License and credits
 
-MIT, see [LICENSE](LICENSE). Taste data from [Qloo](https://www.qloo.com/). Answers from Claude by
+MIT, see [LICENSE](LICENSE). Depends on Express, the Anthropic SDK and tz-lookup (CC0). Taste data from [Qloo](https://www.qloo.com/). Answers from Claude by
 [Anthropic](https://www.anthropic.com/). Place lookups use data from OpenStreetMap, © OpenStreetMap contributors,
 available under the [ODbL](https://www.openstreetmap.org/copyright).

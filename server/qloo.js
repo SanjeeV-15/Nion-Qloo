@@ -13,6 +13,8 @@
 // https://hackathon.api.qloo.com, the key goes in the X-Api-Key header (never in the URL),
 // and Qloo's response data must not be published in the public repo.
 
+import { parseHours } from "./hours.js";
+
 const BASE_URL = "https://hackathon.api.qloo.com";
 
 /** The kinds of things Nion can recommend, and Qloo's name for each. */
@@ -79,6 +81,7 @@ export function normalizeEntity(raw) {
       ? { lat: raw.location.lat, lon: raw.location.lon }
       : undefined;
   const subtype = typeof raw.subtype === "string" ? raw.subtype.split(":").pop() : undefined;
+  const hours = parseHours(properties.hours); // when a place is open, by day of the week
 
   // Qloo's own reason for a pick, when asked for: how much each liked item (by its ID) drove it.
   // The shares add up to about 1. Anything unreadable is simply left out.
@@ -106,6 +109,7 @@ export function normalizeEntity(raw) {
       .slice(0, 6),
     location,
     because,
+    ...(hours ? { hours } : {}),
   };
 }
 
@@ -184,8 +188,13 @@ export function createQloo({
       throw new QlooError("unavailable", "Could not reach Qloo.");
     }
 
-    const remaining = Number(response.headers?.get?.("x-month-ratelimit-remaining"));
-    const limit = Number(response.headers?.get?.("x-month-ratelimit-limit"));
+    // Only believe a header that is really there: a missing one must not read as "0 calls left" (Number(null) is 0).
+    const header = (name) => {
+      const value = response.headers?.get?.(name);
+      return value === null || value === undefined || value === "" ? NaN : Number(value);
+    };
+    const remaining = header("x-month-ratelimit-remaining");
+    const limit = header("x-month-ratelimit-limit");
     if (Number.isFinite(remaining)) quota.monthRemaining = remaining;
     if (Number.isFinite(limit)) quota.monthLimit = limit;
 
@@ -253,10 +262,11 @@ export function createQloo({
      *   tagIds:     IDs of tastes they have (cuisines, genres...)
      *   filterTagIds: only return things that have these tags (for example one cuisine)
      *   excludeEntityIds, excludeTagIds: never return these (what the person dislikes)
+     *   qualityBias: for places, let their rating count in the ranking
      *   place:      { lat, lon } to keep results near a spot (places and destinations only)
      *   radiusM:    how far from that spot, in metres
      */
-    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], excludeEntityIds = [], excludeTagIds = [], place, radiusM = 2000, take = 5 }) {
+    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], excludeEntityIds = [], excludeTagIds = [], qualityBias = false, place, radiusM = 2000, take = 5 }) {
       const type = KINDS[kind];
       if (!type) throw new QlooError("bad_request", `Nion cannot recommend "${kind}".`);
 
@@ -273,6 +283,9 @@ export function createQloo({
       // With two or more liked items Qloo can say how much each one drove a pick. (With one, it would
       // always be "all of it", so it is not asked for.) It does not slow the answer measurably.
       if (entityIds.length >= 2) params["feature.explainability"] = "true";
+      // Lets how well a place is rated count in its ranking (without replacing the person's taste), which in real
+      // answers put the best-rated places first. It only exists for places.
+      if (qualityBias && kind === "place") params["bias.quality"] = "medium";
       if (place && LOCATION_KINDS.has(kind)) {
         params["filter.location"] = pointWkt(place.lat, place.lon);
         params["filter.location.radius"] = Math.min(Math.max(Math.round(radiusM), 100), 50000);

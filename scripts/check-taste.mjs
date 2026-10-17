@@ -4,6 +4,7 @@
 //   npm run check:taste -- memory   runs only the taste-memory group (slice 3)
 //   npm run check:taste -- basics   runs only the recommendation basics (slice 2)
 //   npm run check:taste -- location runs only the location group (slice 5)
+//   npm run check:taste -- open     runs only the "open now" question
 //   npm run check:taste -- memory 5 runs only the fifth question of that group
 //
 // THIS SPENDS ANTHROPIC CREDIT: about eight questions on Haiku 5.5 is a couple of cents.
@@ -55,8 +56,8 @@ const cases = [
   // ----- slice 3: Nion remembers what the person says about their taste -----
   {
     group: "memory", taste: DEMO, say: "I'm hungry.",
-    expect: "says it knows they like ramen and asks a yes or no, no Qloo yet",
-    qloo: 0, question: true, mustMatch: /ramen/i,
+    expect: "goes straight to ramen places and says it based them on the ramen taste (no confirmation first)",
+    qloo: "any>0", needPicks: true, mustMatch: /ramen/i,
   },
   {
     group: "memory", taste: DEMO,
@@ -93,6 +94,13 @@ const cases = [
     expect: "repeats exactly the demo items, nothing extra", qloo: 0, mustMatch: /ramen/i, mustNotMatch: /sushi|tacos|pizza|coffee/i,
   },
 
+  // ----- later improvements -----
+  {
+    group: "open", taste: [], say: "I love tacos and I need somewhere open right now.",
+    expect: "taco places that are open now come first, and it says when one closes",
+    qloo: "any>0", needPicks: true, needHours: true,
+  },
+
   // ----- slice 5: a city the person says, and looking somewhere else -----
   // `city` means the person said where they are, so the server would have found it on the map.
   {
@@ -116,7 +124,7 @@ const inGroup = only ? cases.filter((c) => c.group === only) : cases;
 const number = Number(process.argv[3]);
 const chosen = Number.isInteger(number) && number >= 1 ? inGroup.slice(number - 1, number) : inGroup;
 if (chosen.length === 0) {
-  console.log(`No group called "${only}". Use basics, memory or location.`);
+  console.log(`No group called "${only}". Use basics, memory, location or open.`);
   process.exit(1);
 }
 
@@ -178,6 +186,11 @@ for (const c of chosen) {
   if (c.mustNotMatch && c.mustNotMatch.test(result.reply)) issues.push(`reply should not match ${c.mustNotMatch}`);
   if (c.learned && !learned.some((l) => c.learned.test(l))) issues.push(`should have saved something like ${c.learned}`);
   if (c.notLearned && learned.some((l) => c.notLearned.test(l))) issues.push(`should not have saved ${learned.filter((l) => c.notLearned.test(l)).join(", ")}`);
+  if (c.needHours && !result.suggestions.some((p) => p.hours)) issues.push("no pick showed opening hours");
+  if (c.needHours && result.suggestions.length > 1) {
+    const firstClosed = result.suggestions.findIndex((p) => p.open === false);
+    if (firstClosed >= 0 && result.suggestions.slice(firstClosed).some((p) => p.open === true)) issues.push("an open place was listed after a closed one");
+  }
   if (c.needPicks && result.suggestions.length === 0) issues.push("named places but none were listed on screen");
   if (c.nearCity) {
     const first = result.suggestions.find((p) => p.location);

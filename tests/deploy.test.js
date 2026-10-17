@@ -77,10 +77,22 @@ test("the README has no unfinished marker and links the live demo", () => {
 
 test("the page offers a few things to try, each a real question the app can answer", () => {
   const html = read("public/index.html");
-  const chips = [...html.matchAll(/class="chip"[^>]*data-say="([^"]+)"/g)].map((m) => m[1]);
+  const row = html.slice(html.indexOf('id="chips"'), html.indexOf("</div>", html.indexOf('id="chips"')));
+  const chips = [...row.matchAll(/class="chip"[^>]*data-say="([^"]+)"/g)].map((m) => m[1]);
   assert.ok(chips.length >= 3 && chips.length <= 5, `expected 3 to 5 suggestions, found ${chips.length}`);
   for (const text of chips) assert.ok(text.length > 3 && text.length <= 100, text);
   // The labels say what they ask, so a visitor is never surprised.
   for (const text of chips) assert.ok(html.includes(`>${text}</button>`), `${text} has a different label`);
   assert.match(html, /role="group" aria-label="Things to try"/);
+});
+
+test("the 'where are you?' buttons are hidden until Nion asks, and each one is something Nion accepts as a place", () => {
+  const html = read("public/index.html");
+  const start = html.indexOf('id="place-chips"');
+  assert.ok(start > 0 && /id="place-chips"[^>]*hidden/.test(html), "hidden at the start");
+  const row = html.slice(start, html.indexOf("</div>", start));
+  const says = [...row.matchAll(/data-say="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(says.includes("use my location"));
+  assert.ok(says.length >= 3 && says.length <= 5);
+  assert.match(html, /role="group" aria-label="Where are you\?"/);
 });

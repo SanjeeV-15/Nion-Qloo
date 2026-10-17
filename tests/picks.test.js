@@ -92,3 +92,13 @@ test("the heading says what was left out because the person dislikes it", () => 
   assert.equal(headingFor({ kind: "movie", likes: [], only: [], avoid: ["Moon"] }).because, "Leaving out Moon", "a name keeps its capital letters");
   assert.equal(headingFor({ kind: "movie", likes: [], only: [], avoid: [] }).because, "Popular rather than personal");
 });
+
+test("a card shows when the place is open or closed, only when that is known", () => {
+  const open = describePick({ ...pick, open: true, hours: "Open until 5 pm" }, { kind: "place" });
+  assert.equal(open.hours, "Open until 5 pm");
+  assert.equal(open.open, true);
+  const shut = describePick({ ...pick, open: false, hours: "Closed now, opens at 10 am" }, { kind: "place" });
+  assert.equal(shut.open, false);
+  assert.equal(describePick(pick, { kind: "place" }).hours, "");
+  assert.equal(describePick({ ...pick, hours: 5 }, { kind: "place" }).hours, "", "anything that is not text is ignored");
+});

@@ -10,7 +10,8 @@ import http from "node:http";
 import net from "node:net";
 
 const serverFile = new URL("../server/index.js", import.meta.url).pathname;
-const baseEnv = { PATH: process.env.PATH };
+// The warm-up is off in these tests so it does not add calls of its own; one test turns it on.
+const baseEnv = { PATH: process.env.PATH, NION_WARMUP: "0" };
 
 // Everything a test starts is remembered here, and stopped when the file is done, even if a test
 // failed halfway. (A server left running used to leave an orphan behind and hang the next run.)
@@ -542,4 +543,35 @@ test("a dislike in the person's taste list reaches Qloo as an exclusion, through
   assert.equal(insights.has("filter.exclude.entities"), false);
   assert.deepEqual(data.about.avoid, ["sushi"], "the screen can say what was left out");
   assert.match(JSON.stringify(claude.seen[1].body.messages), /leaving out what they dislike: sushi/);
+});
+
+test("a real server warms up the demo's lookups by itself, and a question then does not repeat them", async () => {
+  const claude = await pretendService(claudeThatAsksForPlaces({ kind: "movie", likes: [{ name: "Radiohead", kind: "artist" }] }));
+  const qloo = await pretendService((url) =>
+    url.pathname === "/search"
+      ? { success: true, results: [{ name: "Radiohead", entity_id: "ART-1", types: ["urn:entity:artist"] }] }
+      : url.pathname === "/v2/insights"
+        ? { success: true, results: { entities: [{ name: "Moon", entity_id: "M1", subtype: "urn:entity:movie" }] } }
+        : { success: true, results: { tags: [] } }
+  );
+  const osm = await pretendService(() => lisbonSearch);
+  const port = await freePort();
+  const { child, output } = startServer(
+    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", ANTHROPIC_BASE_URL: claude.url, QLOO_BASE_URL: qloo.url, NOMINATIM_URL: osm.url, NION_WARMUP: "1" },
+    port
+  );
+  await waitFor(() => /Nion is running/.test(output()));
+  await waitFor(() => /Warmed up \d+ lookups/.test(output()), 20000);
+
+  const searches = () => qloo.seen.filter((c) => c.url.pathname === "/search").map((c) => c.url.searchParams.get("query"));
+  assert.ok(searches().includes("Radiohead"), "the demo's artist was looked up before any visitor came");
+  const before = searches().filter((q) => q === "Radiohead").length;
+
+  const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", content: "films like Radiohead" }], context: {} }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(searches().filter((q) => q === "Radiohead").length, before, "the question reused the warmed lookup instead of asking Qloo again");
 });

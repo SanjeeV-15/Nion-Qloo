@@ -35,6 +35,7 @@ const { createQloo } = await import("./qloo.js");
 const { resolvePlace, geocodePlace, describePlace, cleanPlacePart } = await import("./place.js");
 const { cleanTaste } = await import("./taste.js");
 const { classifyFailure } = await import("./failure.js");
+const { warmUp } = await import("./warmup.js");
 const { estimateCostUsd, createVisitorLimiter, createBudget, createGate, numberFromEnv, cleanVisitorId } = await import("./limits.js");
 const { default: Anthropic } = await import("@anthropic-ai/sdk");
 const claude = new Anthropic();
@@ -259,6 +260,15 @@ const server = app.listen(port, (error) => {
   if (error) return;
   console.log(`Nion is running. Open http://localhost:${port} in Chrome.`);
 });
+
+// A moment after starting, look up the few things a first visitor is likely to use, so their first question is
+// quicker. It stops the instant a real question arrives, so it never slows anyone down.
+if (process.env.NION_WARMUP !== "0") {
+  setTimeout(async () => {
+    const made = await warmUp({ qloo, geocode: geocodePlace, keepGoing: () => gate.count() === 0 });
+    console.log(`Warmed up ${made} lookups for the demo path.`);
+  }, 3000).unref();
+}
 
 // If the port is taken (often by another copy of Nion, or another project), say so plainly
 // instead of looking as if it started.

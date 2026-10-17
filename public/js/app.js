@@ -37,6 +37,7 @@ const el = {
   demoTaste: document.getElementById("demo-taste"),
   forgetTaste: document.getElementById("forget-taste"),
   chips: document.getElementById("chips"),
+  placeChips: document.getElementById("place-chips"),
   typed: document.getElementById("typed"),
   typedInput: document.getElementById("typed-input"),
   replyCard: document.getElementById("reply-card"),
@@ -121,6 +122,9 @@ let followUpTimer = null;
 // web), Nion says a short "one moment" so you know it hasn't stalled. Ordinary
 // answers arrive in about 1 to 2 seconds, so they don't trigger it.
 const FILLER_AFTER_MS = 2200;
+
+// After this long, the screen says it is still working. (A little after the spoken "one moment".)
+const SLOW_NOTE_MS = 2500;
 
 // If there is still no answer after this long, give up and say so, instead of
 // sitting on "thinking" for ever. A web search normally takes under 10 seconds.
@@ -242,6 +246,11 @@ function handleProblem(reason) {
   }
 }
 
+// One-tap answers to "where are you?", shown only while Nion is waiting for that.
+function syncPlaceChips() {
+  el.placeChips.hidden = session.awaiting !== "place";
+}
+
 // What Nion says also appears as text, so it works on mute, and for anyone who types.
 function showReply(text, question) {
   if (question !== undefined) el.youSaid.textContent = question ? `You: ${question}` : "";
@@ -274,6 +283,13 @@ function renderPicks(suggestions, about) {
     };
     add("p", "pick-name", pick.name);
     add("p", "pick-line", pick.meta);
+    if (pick.hours) {
+      // When it is open or closed, in the place's own local time. Open is a touch brighter than closed.
+      const hours = document.createElement("p");
+      hours.className = `pick-line pick-hours ${pick.open ? "is-open" : "is-closed"}`;
+      hours.textContent = pick.hours;
+      card.append(hours);
+    }
     add("p", "pick-why", pick.why);
     add("p", "pick-line pick-because", pick.because);
     add("p", "pick-line", pick.detail);
@@ -296,6 +312,7 @@ function renderPicks(suggestions, about) {
 async function say(text, { then = "waiting" } = {}) {
   trace("said", `“${text}”`); // so a debug log shows what Nion was saying when something overlaps
   showReply(text);
+  syncPlaceChips();
   if (!voiceActive) return true;
   const mine = ++turn;
   echo.text = text;
@@ -635,6 +652,7 @@ async function ask(question, oneShot, gps) {
   // that belongs to a different question.
   showReply("…", question);
   renderPicks([]);
+  syncPlaceChips();
 
   // A question outside any conversation starts a new one (and gets a greeting).
   // Otherwise Claude gets everything said so far, so follow-ups make sense.
@@ -651,6 +669,12 @@ async function ask(question, oneShot, gps) {
   // Waits for a "one moment" to finish, but not for ever.
   const fillerFinished = () =>
     Promise.race([fillerDone, new Promise((resolve) => setTimeout(resolve, FILLER_WAIT_MS))]);
+
+  // After a couple of seconds, say honestly on screen that it is still working (this is also what a typing-only
+  // visitor sees, since they get no spoken "one moment").
+  const slowTimer = setTimeout(() => {
+    if (mine === turn && state === "thinking") showReply("Looking this up. It can take a few seconds.", question);
+  }, SLOW_NOTE_MS);
 
   // If the answer is slow, say a short "one moment". The real answer then waits
   // until that has finished, so the two never overlap.
@@ -692,6 +716,7 @@ async function ask(question, oneShot, gps) {
 
     clearTimeout(askTimeout);
     clearTimeout(fillerTimer);
+    clearTimeout(slowTimer);
     await fillerFinished(); // let "one moment" finish before the answer starts
 
     if (mine !== turn) {
@@ -724,6 +749,7 @@ async function ask(question, oneShot, gps) {
   } catch (error) {
     clearTimeout(askTimeout);
     clearTimeout(fillerTimer);
+    clearTimeout(slowTimer);
     echo.until = Date.now() + ECHO_TAIL_MS; // a "one moment" may have been spoken
     thread.pop(); // the question got no answer, so take it back out
     if (mine !== turn) return; // that was us cancelling because you interrupted
@@ -770,13 +796,15 @@ function handleTyped(raw) {
 }
 
 // A tapped suggestion is asked exactly as if it had been typed (so it works with voice on or off).
-el.chips.addEventListener("click", (event) => {
+function tapSuggestion(event) {
   const chip = event.target?.closest ? event.target.closest("[data-say]") : event.target;
   const text = chip?.dataset?.say;
   if (!text) return;
   el.typedInput.value = "";
   handleTyped(text);
-});
+}
+el.chips.addEventListener("click", tapSuggestion);
+el.placeChips.addEventListener("click", tapSuggestion);
 
 el.typed.addEventListener("submit", (event) => {
   event.preventDefault();

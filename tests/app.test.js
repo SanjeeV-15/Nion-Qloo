@@ -1078,3 +1078,85 @@ test("each pick shows Qloo's own reason, as text", async () => {
   const lines = elements["picks-list"].children[0].children.map((node) => node.textContent);
   assert.ok(lines.includes("Qloo matched this through Radiohead (54%) and Blade Runner 2049 (46%)"), lines.join(" | "));
 });
+
+test("each pick shows its opening hours, as text, when they are known", async () => {
+  await startApp({ voice: false });
+  await typeIn("somewhere open now");
+  fetches[0].respond({
+    reply: "Try the bistro.",
+    suggestions: [{ name: "Bistro", open: true, hours: "Open until 10 pm" }, { name: "Cafe", open: false, hours: "Closed now, opens at 11 am" }, { name: "Diner" }],
+    about: { kind: "place", likes: [], only: [], avoid: [] },
+  });
+  await tick();
+  const cards = elements["picks-list"].children;
+  const lines = (card) => card.children.map((node) => node.textContent);
+  assert.ok(lines(cards[0]).includes("Open until 10 pm"));
+  assert.ok(lines(cards[1]).includes("Closed now, opens at 11 am"));
+  assert.equal(cards[0].children.find((n) => n.textContent === "Open until 10 pm").className, "pick-line pick-hours is-open");
+  assert.equal(cards[1].children.find((n) => n.textContent.startsWith("Closed")).className, "pick-line pick-hours is-closed");
+  assert.ok(!lines(cards[2]).some((t) => /^open until|^open 24|^closed now/i.test(t)), "a place with no hours claims nothing");
+});
+
+// ---------- the shorter first-picks path ----------
+
+test("when Nion needs a location, one-tap place buttons appear, and a tap answers it", async () => {
+  await startApp({ voice: false });
+  await typeIn("where should I eat around here?");
+  fetches[0].needLocation();
+  await tick();
+  assert.equal(elements["place-chips"].hidden, false, "shown while Nion waits to be told where you are");
+
+  elements["place-chips"].handlers.click({ target: { dataset: { say: "Lisbon" } } });
+  await tick();
+  assert.deepEqual(fetches[1].body.location, { text: "Lisbon" });
+  assert.equal(fetches[1].body.messages.at(-1).content, "where should I eat around here?", "the waiting question is asked again");
+  assert.equal(elements["place-chips"].hidden, true, "gone once it has been answered");
+});
+
+test("tapping 'Use my location' asks the browser for it", async () => {
+  await startApp({ voice: false });
+  await typeIn("places near me");
+  fetches[0].needLocation();
+  await tick();
+  elements["place-chips"].handlers.click({ target: { dataset: { say: "use my location" } } });
+  await tick();
+  assert.equal(locationRequests, 1);
+  assert.deepEqual(fetches[1].body.location, { lat: 25.7617, lon: -80.1918 });
+});
+
+test("the place buttons are not there when Nion is not waiting for a place", async () => {
+  await startApp({ voice: false });
+  await typeIn("what time is it");
+  fetches[0].reply("Noon.");
+  await tick();
+  assert.equal(elements["place-chips"].hidden, true);
+});
+
+test("a slow answer says honestly, on screen, that it is still working", async () => {
+  await startApp({ voice: false });
+  await typeIn("music like Radiohead");
+  assert.equal(elements.reply.textContent, "…");
+  firePending(2500);
+  assert.equal(elements.reply.textContent, "Looking this up. It can take a few seconds.");
+  assert.equal(elements["you-said"].textContent, "You: music like Radiohead", "the question is still shown");
+  fetches[0].reply("Try these.");
+  await tick();
+  assert.equal(elements.reply.textContent, "Try these.", "the real answer replaces it");
+});
+
+test("a quick answer never shows the slow note", async () => {
+  await startApp({ voice: false });
+  await typeIn("what time is it");
+  fetches[0].reply("Noon.");
+  await tick();
+  firePending(2500); // the timer was cancelled, so nothing happens
+  assert.equal(elements.reply.textContent, "Noon.");
+});
+
+test("an interrupted question does not leave its slow note on the screen", async () => {
+  await startApp({ voice: false });
+  await typeIn("first question");
+  await typeIn("second question");
+  firePending(2500);
+  assert.equal(elements["you-said"].textContent, "You: second question");
+});

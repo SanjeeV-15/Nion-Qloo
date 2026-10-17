@@ -71,6 +71,8 @@ export function describePick(item, about) {
     name: item.name,
     detail: item.detail,
     meta: meta.join(" · "),
+    hours: typeof item.hours === "string" ? item.hours : "",
+    open: item.open === true,
     why: item.fit ? `${capital(item.fit)} for you` : "",
     because: becauseLine(item.because),
     tags: (item.tags ?? []).slice(0, 3).join(" · "),

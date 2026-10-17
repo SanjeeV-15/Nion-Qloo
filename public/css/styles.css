@@ -437,6 +437,14 @@ main > * {
   color: var(--ink);
 }
 
+.pick-hours.is-open {
+  color: var(--ink);
+}
+
+.pick-hours.is-closed {
+  color: var(--ink-faint);
+}
+
 .pick-because {
   color: var(--ink);
   opacity: 0.8;

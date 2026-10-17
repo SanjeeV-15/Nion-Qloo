@@ -108,3 +108,13 @@ test("Nion is told to note a stated like or dislike even when it only answers wi
   assert.match(prompt, /note it with remember_taste straight away, even if all you do next is ask them a question/);
   assert.match(prompt, /If you are also using ask_qloo, call both in the same step/);
 });
+
+test("Nion is told how to ask for places that are open now", () => {
+  assert.match(buildSystemPrompt({}), /open right now or late, ask for places with open_now set/);
+});
+
+test("with a known taste that fits, Nion goes straight to picks and says what they were based on", () => {
+  const prompt = buildSystemPrompt({});
+  assert.match(prompt, /don't ask first: go ahead and use it, and say in a few words what you based the picks on/);
+  assert.doesNotMatch(prompt, /ask a yes or no/);
+});
