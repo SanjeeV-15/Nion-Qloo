@@ -47,6 +47,12 @@ names (replaced with made-up ones) and of private notes before anything was push
 
 ## 6. Before judging starts
 
+- **Switch off the free plan.** `render.yaml` is on the free plan for testing. Change `plan: free` to
+  `plan: 0.5c-512mb` (the cheapest always-on plan, formerly Starter), push, and let Render apply it. The free plan
+  sleeps after 15 idle minutes and takes about a minute to wake, it can be restarted or suspended at any time, and
+  its restarts reset the spending counters. Change the plan in `render.yaml`, not only in the dashboard, or a later
+  sync could undo it.
+
 - In `render.yaml` change `autoDeployTrigger` to `off` (or turn off auto-deploy in Render) so a late push
   cannot break a working demo.
 - Keep the service running until Nov 16. You can cancel it after the judging period.

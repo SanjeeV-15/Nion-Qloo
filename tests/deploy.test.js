@@ -18,8 +18,18 @@ test("the deployment starts the server without a .env file, which Render does no
   assert.match(yaml, /healthCheckPath: \/api\/health/);
 });
 
-test("the demo stays awake on a paid plan and the Node version is pinned", () => {
-  assert.doesNotMatch(read("render.yaml"), /plan: free/);
+test("the plan is one we know, and the free test setting is flagged as temporary", () => {
+  const yaml = read("render.yaml");
+  assert.match(yaml, /^\s+plan: (free|0\.5c-512mb)\s*$/m);
+  // While it is on the free plan, the file must say so, and say what to change before judging.
+  if (/^\s+plan: free\s*$/m.test(yaml)) {
+    assert.match(yaml, /TEMPORARY/);
+    assert.match(yaml, /BEFORE JUDGING/);
+    assert.match(yaml, /plan: 0\.5c-512mb/);
+  }
+});
+
+test("the Node version is pinned", () => {
   assert.match(read(".node-version"), /^22\s*$/);
 });
 

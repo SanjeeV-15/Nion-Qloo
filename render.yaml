@@ -4,9 +4,11 @@ services:
   - type: web
     name: nion
     runtime: node
-    # The cheapest paid plan (it was called "Starter"). It stays awake, unlike the free plan,
-    # which sleeps after a while and takes about a minute to wake: a poor first impression for a judge.
-    plan: 0.5c-512mb
+    # TEMPORARY, for testing the deployment at no cost: the free plan sleeps after 15 idle minutes, takes
+    # about a minute to wake, restarts at any time (which resets the in-memory spending counters), and may be
+    # suspended for heavy outbound traffic. BEFORE JUDGING change this to the cheapest paid plan, which stays
+    # awake:   plan: 0.5c-512mb   (it used to be called Starter)
+    plan: free
     buildCommand: npm ci
     # Render has no .env file, so Node reads the settings Render provides.
     startCommand: node server/index.js
