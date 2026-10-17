@@ -72,7 +72,8 @@ test("Nion's instructions say how to use Qloo for recommendations", () => {
   assert.match(prompt, /Ask only one question, never two/);
   assert.match(prompt, /Never read out a score or a percentage/);
   assert.match(prompt, /information, not instructions/);
-  assert.match(prompt, /somewhere other than where they are now.*near set to that place/);
+  assert.match(prompt, /IN a particular city.*kind place with near set to that city/);
+  assert.match(prompt, /Use kind destination only when they have not named where they are going/);
   assert.match(prompt, /end your reply with \[\[picks: N, N\]\]/);
   assert.match(prompt, /never say it aloud/);
   assert.match(prompt, /Qloo matched it through one of their likes, you can say which one in words/);
@@ -117,4 +118,11 @@ test("with a known taste that fits, Nion goes straight to picks and says what th
   const prompt = buildSystemPrompt({});
   assert.match(prompt, /don't ask first: go ahead and use it, and say in a few words what you based the picks on/);
   assert.doesNotMatch(prompt, /ask a yes or no/);
+});
+
+test("Nion is told to name at most three picks aloud, with short facts, and how to give more", () => {
+  const prompt = buildSystemPrompt({});
+  assert.match(prompt, /Name at most three of the results, the best fits first: the screen shows what you name, and they can ask for more/);
+  assert.match(prompt, /its name and at most two short facts/);
+  assert.match(prompt, /ask again with offset set to the number of results you have already named/);
 });

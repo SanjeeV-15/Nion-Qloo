@@ -7,3 +7,6 @@ node_modules/
 
 # Local tool settings
 .claude/
+
+# Screenshots show real Qloo results, which must not be published in the public repo
+screenshots/

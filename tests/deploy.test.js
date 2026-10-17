@@ -96,3 +96,15 @@ test("the 'where are you?' buttons are hidden until Nion asks, and each one is s
   assert.ok(says.length >= 3 && says.length <= 5);
   assert.match(html, /role="group" aria-label="Where are you\?"/);
 });
+
+test("the 'hidden' attribute always hides, even on elements that set their own display", () => {
+  // Found in a real browser: the place buttons were meant to be hidden until Nion asks where you are, but a
+  // row with display: flex stayed visible, and the tests (which only look at the attribute) could not see it.
+  const css = read("public/css/styles.css");
+  assert.match(css, /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/);
+  // And the elements that rely on it are marked hidden in the page.
+  const html = read("public/index.html");
+  for (const id of ["place-chips", "reply-card", "picks", "stop"]) {
+    assert.match(html, new RegExp(`id="${id}"[^>]*hidden`), `${id} should start hidden`);
+  }
+});

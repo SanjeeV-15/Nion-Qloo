@@ -102,3 +102,8 @@ test("a card shows when the place is open or closed, only when that is known", (
   assert.equal(describePick(pick, { kind: "place" }).hours, "");
   assert.equal(describePick({ ...pick, hours: 5 }, { kind: "place" }).hours, "", "anything that is not text is ignored");
 });
+
+test("Qloo's generic 'Place' tag is not shown, but other tags are", () => {
+  const card = describePick({ ...pick, tags: ["Place", "Convenience stop", "place", "Credit cards", "Outdoor seating"] }, { kind: "place" });
+  assert.equal(card.tags, "Convenience stop · Credit cards · Outdoor seating");
+});

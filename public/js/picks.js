@@ -75,7 +75,8 @@ export function describePick(item, about) {
     open: item.open === true,
     why: item.fit ? `${capital(item.fit)} for you` : "",
     because: becauseLine(item.because),
-    tags: (item.tags ?? []).slice(0, 3).join(" · "),
+    // "Place" is a generic tag Qloo puts on many places; it says nothing, so it is not shown.
+    tags: (item.tags ?? []).filter((tag) => !/^place$/i.test(String(tag).trim())).slice(0, 3).join(" · "),
     mapUrl: mapUrl(item, about),
   };
 }

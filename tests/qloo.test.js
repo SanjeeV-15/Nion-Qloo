@@ -352,3 +352,17 @@ test("a response with no allowance headers does not read as 'no calls left'", as
   await later.recommend({ kind: "place" });
   assert.deepEqual(later.quota(), { monthRemaining: 9000, monthLimit: 10000 });
 });
+
+test("'more' skips the results already given, and nothing is sent when it is not asked for", async () => {
+  const { qloo, calls } = qlooWith(() => ({ body: { success: true, results: { entities: [] } } }));
+  await qloo.recommend({ kind: "place", offset: 3 });
+  await qloo.recommend({ kind: "place" });
+  await qloo.recommend({ kind: "place", offset: 0 });
+  await qloo.recommend({ kind: "place", offset: 9999 });
+  await qloo.recommend({ kind: "place", offset: "nonsense" });
+  assert.equal(calls[0].url.searchParams.get("offset"), "3");
+  assert.equal(calls[1].url.searchParams.has("offset"), false);
+  assert.equal(calls[2].url.searchParams.has("offset"), false, "zero means from the start");
+  assert.equal(calls[3].url.searchParams.get("offset"), "50", "kept sensible");
+  assert.equal(calls[4].url.searchParams.has("offset"), false);
+});

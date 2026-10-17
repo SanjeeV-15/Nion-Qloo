@@ -126,7 +126,8 @@ export function askQlooTool() {
           type: "string",
           enum: KIND_NAMES,
           description:
-            "What to recommend. place = somewhere near them (food, museums, venues); destination = a city or region to travel to; " +
+            "What to recommend. place = somewhere to eat or go, near them or in a city they name (food, museums, venues); " +
+            "destination = a city or region to travel to, only when they have not said where they are going; " +
             "artist = music; movie; tv_show; brand = fashion and other brands; book; podcast.",
         },
         likes: {
@@ -167,6 +168,12 @@ export function askQlooTool() {
           description: "For places only: set true when they want somewhere open right now or late. Places that are open come first.",
         },
         how_many: { type: "integer", minimum: 1, maximum: 5, description: "How many results, up to five. Default five." },
+        offset: {
+          type: "integer",
+          minimum: 0,
+          maximum: 20,
+          description: "Skip this many results. When they ask for more, use the number of results you have already named, so you do not repeat them.",
+        },
       },
       required: ["kind"],
     },
@@ -499,6 +506,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     });
 
     const take = Math.min(Math.max(Math.round(Number(input.how_many)) || DEFAULT_TAKE, 1), DEFAULT_TAKE);
+    const offset = Math.min(Math.max(Math.round(Number(input.offset)) || 0, 0), 20);
     const wantOpen = kind === "place" && input.open_now === true;
     // Ask for a few extra places: Qloo can list one place twice, and if "open now" was asked for, some of the
     // closest may be closed. The list is cut back to the number wanted below.
@@ -513,6 +521,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
         excludeTagIds,
         // With no cuisine filter (that is where a Thai place slipped into a ramen list), let ratings count.
         qualityBias: kind === "place" && filterTagIds.length === 0,
+        offset,
         place: wantsNearMe || wantsElsewhere ? coords : undefined,
         radiusM,
         take: fetchCount,

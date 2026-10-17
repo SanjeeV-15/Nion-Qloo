@@ -186,6 +186,8 @@ for (const c of chosen) {
   if (c.mustNotMatch && c.mustNotMatch.test(result.reply)) issues.push(`reply should not match ${c.mustNotMatch}`);
   if (c.learned && !learned.some((l) => c.learned.test(l))) issues.push(`should have saved something like ${c.learned}`);
   if (c.notLearned && learned.some((l) => c.notLearned.test(l))) issues.push(`should not have saved ${learned.filter((l) => c.notLearned.test(l)).join(", ")}`);
+  if (c.qloo === "any>0" && result.suggestions.length > 3) issues.push(`named ${result.suggestions.length} picks, expected at most 3`);
+  if (c.qloo === "any>0" && words(result.reply) > 75) issues.push(`too long to listen to (${words(result.reply)} words)`);
   if (c.needHours && !result.suggestions.some((p) => p.hours)) issues.push("no pick showed opening hours");
   if (c.needHours && result.suggestions.length > 1) {
     const firstClosed = result.suggestions.findIndex((p) => p.open === false);

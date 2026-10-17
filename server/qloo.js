@@ -263,10 +263,11 @@ export function createQloo({
      *   filterTagIds: only return things that have these tags (for example one cuisine)
      *   excludeEntityIds, excludeTagIds: never return these (what the person dislikes)
      *   qualityBias: for places, let their rating count in the ranking
+     *   offset: skip this many results (to page on to "more")
      *   place:      { lat, lon } to keep results near a spot (places and destinations only)
      *   radiusM:    how far from that spot, in metres
      */
-    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], excludeEntityIds = [], excludeTagIds = [], qualityBias = false, place, radiusM = 2000, take = 5 }) {
+    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], excludeEntityIds = [], excludeTagIds = [], qualityBias = false, offset = 0, place, radiusM = 2000, take = 5 }) {
       const type = KINDS[kind];
       if (!type) throw new QlooError("bad_request", `Nion cannot recommend "${kind}".`);
 
@@ -286,6 +287,9 @@ export function createQloo({
       // Lets how well a place is rated count in its ranking (without replacing the person's taste), which in real
       // answers put the best-rated places first. It only exists for places.
       if (qualityBias && kind === "place") params["bias.quality"] = "medium";
+      // Skip this many results, so "more" gives the next ones instead of the same ones again.
+      const skip = Math.round(Number(offset));
+      if (Number.isFinite(skip) && skip > 0) params.offset = Math.min(skip, 50);
       if (place && LOCATION_KINDS.has(kind)) {
         params["filter.location"] = pointWkt(place.lat, place.lon);
         params["filter.location.radius"] = Math.min(Math.max(Math.round(radiusM), 100), 50000);

@@ -760,3 +760,22 @@ test("with no dislikes nothing is excluded and nothing extra is looked up", asyn
 test("the remember tool says to use it even when only a question is asked back", () => {
   assert.match(rememberTasteTool().description, /even if you are only asking them a question back/);
 });
+
+// ---------- three picks aloud, and "more" ----------
+
+test("the tool offers a way to ask for the next results, kept to a sensible range", () => {
+  const offset = askQlooTool().input_schema.properties.offset;
+  assert.equal(offset.type, "integer");
+  assert.equal(offset.minimum, 0);
+  assert.match(offset.description, /number of results you have already named/);
+});
+
+test("asking for more passes the offset to Qloo, and a bad offset is ignored or kept in range", async () => {
+  const qloo = pretendQloo();
+  await runAskQloo({ qloo, input: { kind: "movie", offset: 3 }, context: {} });
+  await runAskQloo({ qloo, input: { kind: "movie", offset: 400 }, context: {} });
+  await runAskQloo({ qloo, input: { kind: "movie", offset: -2 }, context: {} });
+  await runAskQloo({ qloo, input: { kind: "movie", offset: "x" }, context: {} });
+  await runAskQloo({ qloo, input: { kind: "movie" }, context: {} });
+  assert.deepEqual(qloo.asked.recommend.map((r) => r.offset), [3, 20, 0, 0, 0]);
+});
