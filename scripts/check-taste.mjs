@@ -101,6 +101,19 @@ const cases = [
     qloo: "any>0", needPicks: true, needHours: true,
   },
 
+  // The follow-up that went wrong in a demo: after picks with hours, "Thank you" made Nion say it had not checked
+  // the hours. Claude cannot see the earlier Qloo results on a later turn, only its own sentence.
+  {
+    group: "open", taste: DEMO,
+    messages: [
+      { role: "user", content: "I like Radiohead and Blade Runner. What would suit me in Denver?" },
+      { role: "assistant", content: "Since you like Radiohead and Blade Runner, try the Clyfford Still Museum, which closes at 5 pm, or the Cathedral Basilica, open until 7 pm. Want more, or something narrower?" },
+      { role: "user", content: "Thank you." },
+    ],
+    expect: "just replies to the thanks; never says it didn't check the hours or corrects itself", qloo: 0,
+    mustNotMatch: /(didn't|did not|haven't|never)( actually)? (check|verif)|correct myself|I should (correct|clarify)|confirm (those|the) (opening )?hours/i,
+  },
+
   // ----- slice 5: a city the person says, and looking somewhere else -----
   // `city` means the person said where they are, so the server would have found it on the map.
   {
