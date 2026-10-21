@@ -32,6 +32,10 @@ export const KINDS = {
 // Only these kinds can be narrowed to a spot on the map.
 const LOCATION_KINDS = new Set(["place", "destination"]);
 
+// Qloo can take the person's age range as a taste signal. It really changes the results: the same likes in the same city
+// gave a ballpark and a lively street for 35 and younger, brunch spots for 36 to 55, and museums for 55 and older.
+export const AGE_RANGES = ["35_and_younger", "36_to_55", "55_and_older"];
+
 const MAX_TAKE = 10;
 
 /** What went wrong, in a form the rest of Nion can act on. */
@@ -82,6 +86,12 @@ export function normalizeEntity(raw) {
       : undefined;
   const subtype = typeof raw.subtype === "string" ? raw.subtype.split(":").pop() : undefined;
   const hours = parseHours(properties.hours); // when a place is open, by day of the week
+  // Qloo's own one-line description and what a place is known for, shown on the screen as "Qloo says".
+  const description = cleanText(properties.short_description, 220);
+  const knownFor = (Array.isArray(properties.specialty_dishes) ? properties.specialty_dishes : [])
+    .map((dish) => cleanText(dish?.name, 40))
+    .filter(Boolean)
+    .slice(0, 3);
 
   // Qloo's own reason for a pick, when asked for: how much each liked item (by its ID) drove it.
   // The shares add up to about 1. Anything unreadable is simply left out.
@@ -110,6 +120,8 @@ export function normalizeEntity(raw) {
     location,
     because,
     ...(hours ? { hours } : {}),
+    ...(description ? { description } : {}),
+    ...(knownFor.length ? { knownFor } : {}),
   };
 }
 
@@ -267,7 +279,7 @@ export function createQloo({
      *   place:      { lat, lon } to keep results near a spot (places and destinations only)
      *   radiusM:    how far from that spot, in metres
      */
-    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], excludeEntityIds = [], excludeTagIds = [], qualityBias = false, offset = 0, place, radiusM = 2000, take = 5 }) {
+    async recommend({ kind, entityIds = [], tagIds = [], filterTagIds = [], excludeEntityIds = [], excludeTagIds = [], qualityBias = false, offset = 0, place, radiusM = 2000, take = 5, age }) {
       const type = KINDS[kind];
       if (!type) throw new QlooError("bad_request", `Nion cannot recommend "${kind}".`);
 
@@ -287,6 +299,8 @@ export function createQloo({
       // Lets how well a place is rated count in its ranking (without replacing the person's taste), which in real
       // answers put the best-rated places first. It only exists for places.
       if (qualityBias && kind === "place") params["bias.quality"] = "medium";
+      // The person's age range, if they chose to say it: one of AGE_RANGES. Anything else is ignored.
+      if (AGE_RANGES.includes(age)) params["signal.demographics.age"] = age;
       // Skip this many results, so "more" gives the next ones instead of the same ones again.
       const skip = Math.round(Number(offset));
       if (Number.isFinite(skip) && skip > 0) params.offset = Math.min(skip, 50);

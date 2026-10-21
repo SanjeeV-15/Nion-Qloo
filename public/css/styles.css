@@ -406,7 +406,7 @@ main > * {
 .picks-because {
   margin: 2px 0 10px;
   font-size: 0.85rem;
-  color: var(--ink-faint);
+  color: var(--ink-dim); /* it says what Qloo used (likes, age range), so it has to be readable */
 }
 
 /* Who did what for these picks: what Qloo did and what the model did. Quiet, but readable. */
@@ -722,4 +722,134 @@ main.history {
   padding: 0;
   background: none;
   border: 0;
+}
+
+/* ---------- the "tell Nion what you love" card ---------- */
+.start-sub {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+
+.intake-field {
+  margin: 0 0 12px;
+  text-align: left;
+}
+
+.intake-label {
+  display: block;
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+
+.intake-hint {
+  margin: 0 0 2px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.intake-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 9px 12px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--glass-edge);
+  border-radius: 12px;
+}
+
+.intake-input::placeholder {
+  color: var(--ink-faint);
+}
+
+.intake-input:focus-visible {
+  outline: 2px solid var(--ink);
+}
+
+.intake-options {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 1px solid var(--glass-edge);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.intake-option {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--glass);
+  border: 0;
+  border-bottom: 1px solid var(--glass-edge);
+  cursor: pointer;
+}
+
+.intake-options li:last-child .intake-option {
+  border-bottom: 0;
+}
+
+.intake-option:hover,
+.intake-option:focus-visible {
+  background: var(--glass-strong);
+}
+
+.intake-picked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.intake-picked:empty {
+  display: none;
+}
+
+.intake-field .chips {
+  justify-content: flex-start;
+  margin-top: 4px;
+}
+
+/* A chosen food or age range is brighter than one that is not. */
+.chip[data-on="yes"] {
+  color: var(--ink);
+  background: var(--glass-strong);
+  border-color: var(--ink-dim);
+}
+
+.intake-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.intake-actions .pill[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- what Qloo said about a pick ---------- */
+.pick-qloo-title {
+  margin: 8px 0 2px;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.pick-qloo {
+  margin-left: 2px;
+  padding-left: 8px;
+  border-left: 2px solid var(--glass-edge);
 }

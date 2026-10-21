@@ -67,18 +67,45 @@
       <button class="chip" type="button" data-say="What would I like in Lisbon?">What would I like in Lisbon?</button>
     </div>
 
-    <!-- The first thing to do, right under the examples: load a demo taste so the picks are personal. It shows
-         while Nion knows nothing about the person; the three steps fold away once they have asked something. -->
-    <section id="start-here" class="start-here" aria-label="How to try Nion">
+    <!-- The first thing to do, right under the examples: tell Nion what you love, so Qloo reacts to your own taste from the
+         first question. Every part is optional. Artists, films and shows are suggested by Qloo as you type. The card
+         folds away once something has been asked, and goes once Nion knows a taste. -->
+    <section id="start-here" class="start-here" aria-label="Tell Nion what you love">
       <div id="start-steps">
-        <p class="start-title">New here? Try it in three steps</p>
-        <ol class="start-list">
-          <li>Tap <b>Use a demo taste</b> so Nion knows what you like.</li>
-          <li>Tap an example above, or ask out loud or by typing.</li>
-          <li>Read the picks, and see what Qloo and Claude each did.</li>
-        </ol>
+        <p class="start-title">New here? Tell Nion what you love</p>
+        <p class="start-sub">Thirty seconds, and every part is optional. Qloo suggests as you type, and it all stays on your device.</p>
+
+        <div class="intake-field">
+          <label class="intake-label" for="intake-artist">Artists you love</label>
+          <input id="intake-artist" class="intake-input" type="text" autocomplete="off" maxlength="60" placeholder="Start typing, like Radiohead">
+          <ul id="intake-artist-options" class="intake-options" hidden></ul>
+          <div id="intake-artist-picked" class="intake-picked"></div>
+        </div>
+
+        <div class="intake-field">
+          <label class="intake-label" for="intake-show">Films or shows you love</label>
+          <input id="intake-show" class="intake-input" type="text" autocomplete="off" maxlength="60" placeholder="Start typing, like Blade Runner 2049">
+          <ul id="intake-show-options" class="intake-options" hidden></ul>
+          <div id="intake-show-picked" class="intake-picked"></div>
+        </div>
+
+        <div class="intake-field">
+          <p class="intake-label">A food you love</p>
+          <div id="intake-foods" class="chips" role="group" aria-label="Foods you love"></div>
+        </div>
+
+        <div class="intake-field">
+          <p class="intake-label">Your age range</p>
+          <p class="intake-hint">Optional. Qloo uses it to tune what it suggests, and it never leaves your device except to ask Qloo.</p>
+          <div id="intake-ages" class="chips" role="group" aria-label="Your age range"></div>
+        </div>
       </div>
-      <button id="demo-taste" class="pill small" type="button">Use a demo taste</button>
+
+      <div class="intake-actions">
+        <button id="intake-start" class="pill small" type="button" disabled>Start with my taste</button>
+        <button id="intake-open" class="pill small" type="button" hidden>Tell Nion what you love</button>
+        <button id="demo-taste" class="pill small" type="button">Use a demo taste</button>
+      </div>
     </section>
 
     <div id="reply-card" class="reply-card" hidden>

@@ -8,7 +8,7 @@
 //
 // Everything Qloo returns is untrusted text, so it is labelled as data for Claude.
 
-import { KINDS, QlooError, pickTag } from "./qloo.js";
+import { KINDS, QlooError, pickTag, AGE_RANGES } from "./qloo.js";
 import { openStatus, timeZoneFor } from "./hours.js";
 
 export const ASK_QLOO = "ask_qloo";
@@ -219,6 +219,10 @@ export function presentResult(entity, timeZone, anchorNames = new Map(), now = n
     detail: entity.detail,
     distance: distanceWords(entity.distanceM, timeZone),
     fit: matchWord(entity.match),
+    // Qloo's own number for how well this fits (0 to 1) and its own words about it: shown on the screen as "Qloo says".
+    ...(Number.isFinite(entity.match) ? { fitScore: entity.match } : {}),
+    ...(entity.description ? { description: entity.description } : {}),
+    ...(entity.knownFor?.length ? { knownFor: entity.knownFor } : {}),
     price: PRICE_WORDS[entity.priceLevel],
     rating: entity.rating,
     tags: entity.tags,
@@ -302,6 +306,7 @@ function describeForClaude(item, number) {
     item.hours ? item.hours.replace(/^./, (c) => c.toLowerCase()) : undefined,
     item.fit ? `${item.fit} for them` : undefined,
     item.because?.length ? `Qloo matched it through: ${item.because.map((b) => `${b.name} ${Math.round(b.share * 100)}%`).join(", ")}` : undefined,
+    item.description ? `Qloo says: ${item.description}` : undefined,
     item.tags?.length ? `tags: ${item.tags.join(", ")}` : undefined,
   ].filter(Boolean);
   return `${number}. ${parts.join(" | ")}`;
@@ -387,6 +392,8 @@ export async function runAskQloo({ qloo, input, context = {} }) {
   }
 
   const wantsNearMe = kind === "place" || input.near_me === true;
+  // The person's age range, if they chose to give it. Qloo uses it as a taste signal.
+  const age = AGE_RANGES.includes(context.age) ? context.age : undefined;
 
   // Somewhere other than where the person is now ("what would I like in Lisbon?").
   let coords = context.coords;
@@ -527,6 +534,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
         place: wantsNearMe || wantsElsewhere ? coords : undefined,
         radiusM,
         take: fetchCount,
+        age,
       });
     };
 
@@ -602,10 +610,10 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     ].join("\n");
 
     // What these picks were based on, so the screen can say so honestly.
-    const about = { kind, likes: [...likeNames, ...tasteNames], only: onlyNames, avoid: avoidNames };
+    const about = { kind, likes: [...likeNames, ...tasteNames], only: onlyNames, avoid: avoidNames, ...(age ? { age } : {}) };
     // What Qloo did for this answer, so the screen can say so with real numbers: how many of the person's likes and
     // tags it matched, how many things it left out, and how many recommendation requests it took.
-    const stats = { likes: likeNames.length, tags: tagIds.length + filterTagIds.length, avoided: avoidNames.length, requests };
+    const stats = { likes: likeNames.length, tags: tagIds.length + filterTagIds.length, avoided: avoidNames.length, requests, ...(age ? { age } : {}) };
     return { text, suggestions, about, stats, isError: false };
   } catch (error) {
     if (error instanceof QlooError) {

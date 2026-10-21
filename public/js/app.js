@@ -17,9 +17,10 @@ import { parseUtterance, detectCommand } from "./wake.js";
 import { isEcho, isInterruption, stripLeadingEcho, stripPhrase, commandAtEnd } from "./echo.js";
 import { createListener, speechInSupported } from "./speech-in.js";
 import { speak, stopSpeaking, speechOutSupported } from "./speech-out.js";
-import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste, getVisitorId } from "./storage.js";
+import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste, getAge, saveAge, clearAge, getVisitorId } from "./storage.js";
 import { DEMO_TASTE, mergeLearned, tasteForRequest, summarizeTaste } from "./taste.js";
 import { headingFor, describePick, madeLines } from "./picks.js";
+import { createIntake } from "./intake.js";
 import { showState } from "./ui.js";
 import { geolocationPermission, getDevicePosition } from "./location.js";
 
@@ -37,6 +38,8 @@ const el = {
   demoTaste: document.getElementById("demo-taste"),
   startHere: document.getElementById("start-here"),
   startSteps: document.getElementById("start-steps"),
+  intakeStart: document.getElementById("intake-start"),
+  intakeOpen: document.getElementById("intake-open"),
   forgetTaste: document.getElementById("forget-taste"),
   chips: document.getElementById("chips"),
   placeChips: document.getElementById("place-chips"),
@@ -60,6 +63,7 @@ const params = new URLSearchParams(location.search);
 if (params.has("reset")) {
   clearName();
   clearTaste();
+  clearAge();
   clearConversations();
 }
 
@@ -88,20 +92,27 @@ el.copylog.addEventListener("click", () => navigator.clipboard?.writeText(traceL
 // It only learns what the person says. The demo taste is for anyone who would rather not talk.
 function renderTaste() {
   const items = getTaste();
-  el.tasteLine.textContent = summarizeTaste(items);
+  el.tasteLine.textContent = summarizeTaste(items, 3, getAge());
   const hasTaste = items.length > 0;
   el.demoTaste.hidden = hasTaste;
   el.forgetTaste.hidden = !hasTaste;
   updateStartHere();
 }
-// The "try it in three steps" panel is for someone who has not told Nion anything yet. Once a reply is on the
-// screen the steps fold away, but the demo-taste button stays until Nion knows a taste.
+// The "tell Nion what you love" card is for someone who has not told Nion anything yet. Once a reply is on the screen
+// it folds away to two buttons (open it again, or use the demo taste), and it goes once Nion knows a taste.
+let introOpen = false; // the person reopened the card after it folded
 function updateStartHere() {
   el.startHere.hidden = getTaste().length > 0;
-  const folded = Boolean(el.reply.textContent); // is there an answer on the screen?
+  const folded = Boolean(el.reply.textContent) && !introOpen; // is there an answer on the screen?
   el.startSteps.hidden = folded;
-  el.startHere.dataset.folded = folded ? "yes" : ""; // folded: just the button, without the box around it
+  el.intakeStart.hidden = folded;
+  el.intakeOpen.hidden = !folded;
+  el.startHere.dataset.folded = folded ? "yes" : ""; // folded: just the buttons, without the box around them
 }
+el.intakeOpen.addEventListener("click", () => {
+  introOpen = true;
+  updateStartHere();
+});
 el.demoTaste.addEventListener("click", () => {
   saveTaste(DEMO_TASTE);
   trace("taste", "demo taste loaded");
@@ -109,8 +120,35 @@ el.demoTaste.addEventListener("click", () => {
 });
 el.forgetTaste.addEventListener("click", () => {
   clearTaste();
+  clearAge();
+  intake.reset();
+  introOpen = false;
   trace("taste", "forgotten");
   renderTaste();
+});
+// The "tell Nion what you love" box. What the person picks becomes the taste Nion starts from.
+const intake = createIntake({
+  el: {
+    artistInput: document.getElementById("intake-artist"),
+    artistOptions: document.getElementById("intake-artist-options"),
+    artistPicked: document.getElementById("intake-artist-picked"),
+    showInput: document.getElementById("intake-show"),
+    showOptions: document.getElementById("intake-show-options"),
+    showPicked: document.getElementById("intake-show-picked"),
+    foods: document.getElementById("intake-foods"),
+    ages: document.getElementById("intake-ages"),
+    start: el.intakeStart,
+  },
+  make: (tag) => document.createElement(tag),
+  fetchImpl: (...args) => fetch(...args),
+  visitorId: getVisitorId,
+  onStart({ taste, age }) {
+    saveTaste(mergeLearned(getTaste(), taste));
+    saveAge(age);
+    trace("taste", `from the intake box: ${taste.map((t) => t.name).join(", ")}${age ? `, age ${age}` : ""}`);
+    introOpen = false;
+    renderTaste();
+  },
 });
 renderTaste();
 
@@ -309,9 +347,13 @@ function renderPicks(suggestions, about, made) {
       card.append(hours);
     }
     add("p", "pick-why", pick.why);
-    add("p", "pick-line pick-because", pick.because);
+    // What Qloo itself said about this pick, grouped under one label so it is clear which words are Qloo's.
+    const fromQloo = [pick.fitScore, pick.description, pick.because, pick.knownFor, pick.qlooTags].filter(Boolean);
+    if (fromQloo.length > 0) {
+      add("p", "pick-qloo-title", "Qloo says");
+      for (const line of fromQloo) add("p", `pick-line pick-qloo${line === pick.because ? " pick-because" : ""}`, line);
+    }
     add("p", "pick-line", pick.detail);
-    add("p", "pick-line", pick.tags);
     if (pick.mapUrl) {
       const link = document.createElement("a");
       link.className = "pick-link";
@@ -659,6 +701,8 @@ function currentContext(isNewConversation) {
     isNewConversation,
     // What they have told Nion they like (the server checks it before using it).
     taste: tasteForRequest(getTaste()),
+    // Their age range, only if they chose to give one (the server only accepts Qloo's own ranges).
+    age: getAge(),
   };
 }
 

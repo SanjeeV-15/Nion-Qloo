@@ -112,6 +112,7 @@ export function createBrain({ client, qloo, geocode = geocodePlace, model: defau
               coordsFrom,
               placeLabel,
               timeZone: context?.timeZone,
+              age: context?.age, // the person's age range, if they gave it
               geocode,
               // What the person has said they dislike (already checked by the server), for Qloo to leave out.
               dislikes: (context?.taste ?? []).filter((t) => t.opinion === "dislike").map((t) => ({ name: t.name, kind: t.kind })),

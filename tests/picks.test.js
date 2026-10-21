@@ -136,3 +136,41 @@ test("nothing is said when the server sent nothing", () => {
   assert.equal(madeLines(undefined), null);
   assert.equal(madeLines("text"), null);
 });
+
+// ---------- the age range, and what Qloo says about a pick ----------
+
+test("the heading says when the picks were tuned for an age range", () => {
+  assert.deepEqual(headingFor({ kind: "place", likes: ["Radiohead"], only: [], avoid: [], age: "36_to_55" }), {
+    title: "Places near you",
+    because: "Because you like Radiohead, tuned for ages 36 to 55",
+  });
+  assert.equal(headingFor({ kind: "movie", likes: [], only: [], age: "55_and_older" }).because, "Tuned for ages 55 or older");
+  assert.equal(headingFor({ kind: "movie", likes: ["Radiohead"], only: [], age: "ancient" }).because, "Because you like Radiohead");
+});
+
+test("the who-did-what line says when Qloo used the age range", () => {
+  const lines = madeLines({ model: "claude-haiku-5-5", qloo: { likes: 2, tags: 0, avoided: 0, requests: 1, age: "36_to_55" }, searches: 0 });
+  assert.equal(lines.qloo, "Qloo matched 2 likes, then picked these (1 recommendation request). It also used your age range (36 to 55).");
+  const none = madeLines({ model: "claude-haiku-5-5", qloo: { likes: 2, tags: 0, avoided: 0, requests: 1 }, searches: 0 });
+  assert.ok(!/age range/.test(none.qloo));
+});
+
+test("a pick carries Qloo's own score, description, known-for and tags, each as a labelled line", () => {
+  const card = describePick(
+    { name: "Noodle House", fitScore: 0.8112, description: "A cosy noodle bar.", knownFor: ["Tonkotsu Ramen", "Gyoza", "Karaage", "Extra"], tags: ["Place", "Late night", "Casual"] },
+    { kind: "place" }
+  );
+  assert.equal(card.fitScore, "Fit score 0.81 out of 1");
+  assert.equal(card.description, "A cosy noodle bar.");
+  assert.equal(card.knownFor, "Known for: Tonkotsu Ramen, Gyoza, Karaage");
+  assert.equal(card.qlooTags, "Qloo tags: Late night · Casual", "the generic Place tag is not shown");
+});
+
+test("a pick with nothing from Qloo to show says nothing under Qloo's name", () => {
+  const card = describePick({ name: "Moon" }, { kind: "movie" });
+  assert.equal(card.fitScore, "");
+  assert.equal(card.description, "");
+  assert.equal(card.knownFor, "");
+  assert.equal(card.qlooTags, "");
+  assert.equal(describePick({ name: "x", fitScore: "high", knownFor: [] }, { kind: "movie" }).fitScore, "", "a score that is not a number is not shown");
+});

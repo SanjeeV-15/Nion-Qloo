@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createQloo, QlooError, KINDS, cleanText, pointWkt, normalizeEntity, pickTag } from "../server/qloo.js";
+import { createQloo, QlooError, KINDS, cleanText, pointWkt, normalizeEntity, pickTag, AGE_RANGES } from "../server/qloo.js";
 
 // A pretend Qloo. The data below is made up (Qloo asks that its real answers are not
 // published), but it has the same shape as the real thing.
@@ -365,4 +365,41 @@ test("'more' skips the results already given, and nothing is sent when it is not
   assert.equal(calls[2].url.searchParams.has("offset"), false, "zero means from the start");
   assert.equal(calls[3].url.searchParams.get("offset"), "50", "kept sensible");
   assert.equal(calls[4].url.searchParams.has("offset"), false);
+});
+
+// ---------- the age range, and Qloo's own words about a pick ----------
+
+test("an age range is sent to Qloo as a signal, and only Qloo's own three ranges are", async () => {
+  assert.deepEqual(AGE_RANGES, ["35_and_younger", "36_to_55", "55_and_older"]);
+  const { qloo, calls } = qlooWith(() => ({ body: { success: true, results: { entities: [] } } }));
+  await qloo.recommend({ kind: "place", entityIds: ["A"], place: { lat: 1, lon: 2 }, age: "36_to_55" });
+  assert.equal(calls[0].url.searchParams.get("signal.demographics.age"), "36_to_55");
+
+  await qloo.recommend({ kind: "place", entityIds: ["A"], place: { lat: 1, lon: 2 }, age: "ancient" });
+  assert.equal(calls[1].url.searchParams.has("signal.demographics.age"), false, "an unknown range is ignored");
+
+  await qloo.recommend({ kind: "movie", entityIds: ["A"] });
+  assert.equal(calls[2].url.searchParams.has("signal.demographics.age"), false, "no age means nothing is sent");
+});
+
+test("Qloo's description and what a place is known for are kept, cleaned, and left out when absent", () => {
+  const entity = normalizeEntity({
+    entity_id: "P1",
+    name: "Noodle House",
+    properties: {
+      short_description: "A cosy noodle bar with a late-night crowd.",
+      specialty_dishes: [{ name: "Tonkotsu Ramen" }, { name: "Gyoza" }, { name: "Karaage" }, { name: "Fourth dish" }, null, { name: 5 }],
+    },
+  });
+  assert.equal(entity.description, "A cosy noodle bar with a late-night crowd.");
+  assert.deepEqual(entity.knownFor, ["Tonkotsu Ramen", "Gyoza", "Karaage"], "at most three");
+
+  const bare = normalizeEntity({ entity_id: "P2", name: "Bare Place" });
+  assert.equal("description" in bare, false);
+  assert.equal("knownFor" in bare, false);
+});
+
+test("Qloo's description can never carry markup into the page", () => {
+  const entity = normalizeEntity({ entity_id: "P1", name: "x", properties: { short_description: 'Nice <img src=x onerror="alert(1)"> place' } });
+  assert.ok(!/[<>]/.test(entity.description), entity.description);
 });

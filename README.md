@@ -54,7 +54,7 @@ The `.env` file is private: git ignores it and it must never be committed or sha
 Replies are short and written to be heard. What Nion suggested also appears as a list under its answer, with a link
 that opens a map search. When you have given Nion two or more things you like, each pick also shows Qloo's own
 breakdown of how much each one drove it. Things you have said you dislike are sent to Qloo to leave out, and the list
-says what was left out. Four suggestions under the typing box can be tapped to try Nion, and when Nion needs to know where you are, so can "Use my location" and three sample cities. **Stop** (or Escape, or
+says what was left out. Under each pick, a **Qloo says** block shows what Qloo itself returned: its fit score, its own one-line description, which of your likes drove the pick (with the shares), what a place is known for, and its tags. A **Tell Nion what you love** card, just under the typing box, lets a new visitor pick a few artists, films or shows (Qloo suggests real matches as they type), a food, and, only if they want, an age range, so Qloo reacts to their own taste from the first question; all of it is optional, and "Use a demo taste" skips it. Four suggestions under the typing box can be tapped to try Nion, and when Nion needs to know where you are, so can "Use my location" and three sample cities. **Stop** (or Escape, or
 tapping the circle) cuts Nion off. A started conversation or a quick follow-up (within 15 seconds of an answer) needs
 no wake phrase.
 
@@ -75,6 +75,11 @@ Browser page  --- what you say or type, your taste list, your place --->  Node s
 - Claude turns what you say into a request for Qloo (names are looked up to get Qloo's IDs, then recommendations are
   asked for near a point on the map, with your likes as signals, your dislikes excluded, and Qloo's explanation of each
   pick when two or more likes are blended), and turns the results into a short spoken answer.
+- The age range, if the person chose one, is sent to Qloo as one of its three age ranges (`signal.demographics.age`).
+  It changes the picks: with the same likes near Denver, Qloo returned a ballpark and a lively street for 35 or
+  younger, brunch spots for 36 to 55, and museums for 55 or older (`npm run check:qloo`, step 15).
+- Suggestions in the card come from Qloo's own search (`/api/suggest` asks it for names as the person types, after a
+  pause, with its own limits so it cannot use up the monthly calls).
 - A place you say or type is found on the map with OpenStreetMap, so Qloo can look near it. The three sample cities on the page (New York, Lisbon, Tokyo) are also built in, so they still work if OpenStreetMap cannot be reached.
 - Whether a place is open is worked out from the opening hours Qloo returns, using the local time at the place
   (found from its coordinates with [tz-lookup](https://github.com/photostructure/tz-lookup), public domain).
@@ -104,6 +109,7 @@ Everything is optional except the two keys. The names and defaults are in `.env.
 | `NION_MODEL` | Which Claude model answers | `claude-haiku-5-5` |
 | `NION_DAILY_BUDGET_USD`, `NION_TOTAL_BUDGET_USD` | Estimated spending limits; Nion "rests" when reached | 2 and 8 |
 | `NION_VISITOR_PER_MINUTE`, `NION_VISITOR_PER_HOUR`, `NION_IP_PER_HOUR` | How often one visitor may ask | 6, 40, 300 |
+| `NION_SUGGEST_PER_MINUTE`, `NION_SUGGEST_PER_HOUR`, `NION_SUGGEST_IP_PER_HOUR` | How often one visitor may ask Qloo for suggestions while typing in the "tell Nion what you love" box | 40, 300, 600 |
 | `NION_MAX_IN_FLIGHT` | Questions answered at once | 6 |
 | `NION_QLOO_RESERVE` | Rest when this few of Qloo's monthly calls are left | 150 |
 | `TRUST_PROXY_HOPS`, `NION_IP_DEBUG` | Reading a visitor's address behind a host's proxy | 0, off |
@@ -113,7 +119,7 @@ Everything is optional except the two keys. The names and defaults are in `.env.
 
 ```
 npm test                    # over 300 tests; no keys needed; nothing is spent
-npm run check:qloo          # real Qloo and OpenStreetMap, no Claude: uses a few of Qloo's monthly calls
+npm run check:qloo          # real Qloo and OpenStreetMap, no Claude (16 steps, including the age range): uses a few of Qloo's monthly calls
 npm run check:taste         # real Claude and Qloo: SPENDS Anthropic credit (about 3 cents for everything)
 npm run check:taste -- memory   # one group: basics, memory or location
 ```
@@ -128,6 +134,8 @@ checks. Nothing here prints your keys.
   (Anthropic) and, as names and tags, to Qloo. The server logs counts and estimated cost, never what was said.
 - **A place you name, or your GPS position,** goes to OpenStreetMap's free lookup to find the place. A GPS position
   is kept only in the page's memory until it closes.
+- **Your age range** is optional. It is kept only in your browser, and the only thing sent is one of three ranges
+  (35 or younger, 36 to 55, 55 or older), never an exact age. "Forget my taste" removes it.
 - **Your name, taste list and History** are kept only in your browser's storage on your device. Nion has no accounts
   and no database. The page also keeps a random id in your browser so a busy server can slow one visitor down
   without affecting others.

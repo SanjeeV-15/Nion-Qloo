@@ -347,6 +347,7 @@ test("the screen gets the same results in a tidy form", async () => {
     detail: "1 Example St Denver, CO",
     distance: "about 8 minutes on foot",
     fit: "a strong fit",
+    fitScore: 0.79, // Qloo's own number, shown on the screen as "Qloo says"
     price: "inexpensive",
     rating: 4.4,
     tags: ["Ramen", "Casual"],
@@ -812,4 +813,40 @@ test("a dislike that was left out is counted, and a wider search counts as anoth
 test("with no taste at all, nothing is claimed as matched", async () => {
   const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place" }, context: { coords: denver } });
   assert.deepEqual(out.stats, { likes: 0, tags: 0, avoided: 0, requests: 1 });
+});
+
+// ---------- the age range, and Qloo's own words ----------
+
+test("the person's age range reaches Qloo, is counted, and is told to the screen", async () => {
+  const qloo = pretendQloo({ entities: { Radiohead: "ART-1" } });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }] },
+    context: { coords: denver, age: "36_to_55" },
+  });
+  assert.equal(qloo.asked.recommend[0].age, "36_to_55");
+  assert.equal(out.about.age, "36_to_55");
+  assert.equal(out.stats.age, "36_to_55");
+});
+
+test("no age range, or one Qloo does not know, means none is used", async () => {
+  for (const age of [undefined, "", "ancient", 40]) {
+    const qloo = pretendQloo();
+    const out = await runAskQloo({ qloo, input: { kind: "place" }, context: { coords: denver, age } });
+    assert.equal(qloo.asked.recommend[0].age, undefined);
+    assert.equal("age" in out.about, false);
+    assert.equal("age" in out.stats, false);
+  }
+});
+
+test("Qloo's own score, description and known-for go to the screen, and its description goes to Claude", async () => {
+  const qloo = pretendQloo({
+    results: [entity({ description: "A cosy noodle bar with a late-night crowd.", knownFor: ["Tonkotsu Ramen", "Gyoza"] })],
+  });
+  const out = await runAskQloo({ qloo, input: { kind: "place" }, context: { coords: denver } });
+  const pick = out.suggestions[0];
+  assert.equal(pick.fitScore, 0.79);
+  assert.equal(pick.description, "A cosy noodle bar with a late-night crowd.");
+  assert.deepEqual(pick.knownFor, ["Tonkotsu Ramen", "Gyoza"]);
+  assert.match(out.text, /Qloo says: A cosy noodle bar with a late-night crowd\./);
 });

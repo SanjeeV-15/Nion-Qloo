@@ -694,10 +694,16 @@ test("?reset forgets the name and clears History, so a demo starts fresh", async
   fetches = [];
   globalThis.location = { search: "?reset" };
   storage.set("nion.name", "Sanjeev Neon");
-  globalThis.document = { getElementById: (id) => (elements[id] ??= makeElement()), addEventListener: () => {} };
+  storage.set("nion.age", "36_to_55");
+  globalThis.document = {
+    getElementById: (id) => (elements[id] ??= makeElement()),
+    createElement: () => makeElement(),
+    addEventListener: () => {},
+  };
   await import(`../public/js/app.js?run=${++appVersion}`);
   assert.equal(storage.get("nion.name"), undefined);
   assert.equal(storage.get("nion.conversations"), undefined);
+  assert.equal(storage.get("nion.age"), undefined, "the age range is forgotten too");
 });
 
 test("a single stray word heard while Nion is talking does not cut it off", async () => {
@@ -1142,6 +1148,116 @@ test("someone who already has a taste never sees the panel", async () => {
   assert.equal(elements["start-here"].hidden, true);
   elements["forget-taste"].handlers.click();
   assert.equal(elements["start-here"].hidden, false, "it comes back if they forget their taste");
+});
+
+// ---------- the "tell Nion what you love" card ----------
+
+test("foods and an age range from the card become the person's taste and age, and the card goes", async () => {
+  await startApp({ voice: false });
+  assert.equal(elements["intake-start"].disabled, true, "nothing chosen yet");
+  elements["intake-foods"].children[0].click(); // ramen
+  elements["intake-ages"].children[2].click(); // 36 to 55
+  assert.equal(elements["intake-start"].disabled, false);
+  elements["intake-start"].handlers.click();
+
+  assert.deepEqual(JSON.parse(storage.get("nion.taste")).map((t) => [t.name, t.kind, t.opinion]), [["ramen", "food", "like"]]);
+  assert.equal(storage.get("nion.age"), "36_to_55");
+  assert.equal(elements["start-here"].hidden, true);
+  assert.equal(elements["taste-line"].textContent, "Your taste: ramen · ages 36 to 55");
+
+  // The next question carries both, so Qloo can use them.
+  await typeIn("I'm hungry");
+  assert.equal(fetches[0].body.context.age, "36_to_55");
+  assert.deepEqual(fetches[0].body.context.taste.map((t) => t.name), ["ramen"]);
+});
+
+test("no age is sent unless the person chose one", async () => {
+  await startApp({ voice: false });
+  elements["intake-foods"].children[0].click();
+  elements["intake-start"].handlers.click();
+  assert.equal(storage.get("nion.age"), undefined);
+  await typeIn("I'm hungry");
+  assert.equal(fetches[0].body.context.age, undefined);
+});
+
+test("the demo taste does not set an age", async () => {
+  await startApp({ voice: false });
+  elements["demo-taste"].handlers.click();
+  assert.equal(storage.get("nion.age"), undefined);
+});
+
+test("'Forget my taste' forgets the age too, and brings the card back", async () => {
+  await startApp({ voice: false });
+  elements["intake-foods"].children[1].click();
+  elements["intake-ages"].children[1].click();
+  elements["intake-start"].handlers.click();
+  assert.equal(storage.get("nion.age"), "35_and_younger");
+
+  elements["forget-taste"].handlers.click();
+  assert.equal(storage.get("nion.taste"), undefined);
+  assert.equal(storage.get("nion.age"), undefined);
+  assert.equal(elements["start-here"].hidden, false);
+  assert.equal(elements["intake-start"].disabled, true, "the card starts empty again");
+  assert.equal(elements["intake-ages"].children[0].dataset.on, "yes");
+});
+
+test("after an answer the card folds to two buttons, and 'Tell Nion what you love' opens it again", async () => {
+  await startApp({ voice: false });
+  assert.equal(elements["intake-open"].hidden, true, "not needed while the card is open");
+  assert.equal(elements["intake-start"].hidden, false);
+
+  await typeIn("I'm hungry");
+  fetches[0].reply("What kind of food do you love?");
+  await tick();
+  assert.equal(elements["start-steps"].hidden, true);
+  assert.equal(elements["intake-start"].hidden, true);
+  assert.equal(elements["intake-open"].hidden, false);
+  assert.equal(elements["demo-taste"].hidden, false, "the demo taste is still one tap away");
+
+  elements["intake-open"].handlers.click();
+  assert.equal(elements["start-steps"].hidden, false);
+  assert.equal(elements["intake-start"].hidden, false);
+  assert.equal(elements["intake-open"].hidden, true);
+});
+
+// ---------- what Qloo says about each pick ----------
+
+test("each pick has a labelled 'Qloo says' block with Qloo's own score, words and tags", async () => {
+  await startApp({ voice: false });
+  await typeIn("what would suit me");
+  fetches[0].respond({
+    reply: "Try the club.",
+    suggestions: [
+      {
+        name: "Comedy Cellar",
+        fitScore: 0.89,
+        description: "An intimate comedy club.",
+        knownFor: ["Stand-up"],
+        because: [{ name: "Blade Runner 2049", share: 0.51 }, { name: "Radiohead", share: 0.49 }], // the server sends the biggest first
+        tags: ["Iconic", "Historic"],
+        detail: "117 MacDougal St",
+      },
+      { name: "Plain Place" },
+    ],
+    about: { kind: "place", likes: ["Radiohead"], only: [], avoid: [], age: "36_to_55" },
+  });
+  await tick();
+  const [first, second] = elements["picks-list"].children;
+  const lines = first.children.map((node) => node.textContent);
+  const title = lines.indexOf("Qloo says");
+  assert.ok(title > 0, "the block has a label");
+  assert.equal(first.children[title].className, "pick-qloo-title");
+  assert.deepEqual(lines.slice(title + 1, title + 6), [
+    "Fit score 0.89 out of 1",
+    "An intimate comedy club.",
+    "Qloo matched this through Blade Runner 2049 (51%) and Radiohead (49%)",
+    "Known for: Stand-up",
+    "Qloo tags: Iconic · Historic",
+  ]);
+  assert.ok(first.children.slice(title + 1, title + 6).every((node) => node.className.includes("pick-qloo")));
+  assert.equal(lines.at(-2), "117 MacDougal St", "the address comes after Qloo's block");
+  assert.ok(!second.children.some((node) => node.textContent === "Qloo says"), "nothing from Qloo, so no Qloo block");
+  assert.equal(elements["picks-because"].textContent, "Because you like Radiohead, tuned for ages 36 to 55");
 });
 
 // ---------- the shorter first-picks path ----------

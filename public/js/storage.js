@@ -92,6 +92,40 @@ export function clearTaste() {
   }
 }
 
+// ---------- age range (only if the person chose to give it) ----------
+//
+// One of Qloo's three age ranges, kept on this device and sent with each question so Qloo can use it. It is never
+// asked for again, and "Forget my taste" removes it.
+
+const AGE_KEY = "nion.age";
+const AGE_VALUES = ["35_and_younger", "36_to_55", "55_and_older"]; // the same as AGE_CHOICES in taste.js (a test checks)
+
+export function getAge() {
+  try {
+    const value = localStorage.getItem(AGE_KEY);
+    return AGE_VALUES.includes(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveAge(value) {
+  try {
+    if (AGE_VALUES.includes(value)) localStorage.setItem(AGE_KEY, value);
+    else localStorage.removeItem(AGE_KEY);
+  } catch {
+    // Not saved: Nion will not use an age range.
+  }
+}
+
+export function clearAge() {
+  try {
+    localStorage.removeItem(AGE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+
 // ---------- conversations (for the History screen) ----------
 //
 // Each conversation is saved as { id, startedAt, updatedAt, turns: [...] }. A turn is

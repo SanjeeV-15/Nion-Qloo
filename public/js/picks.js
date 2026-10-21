@@ -4,6 +4,8 @@
 // into elements, always as text and never as HTML, because every word here came from
 // outside (Qloo) and must never be treated as code.
 
+import { ageLabel } from "./taste.js";
+
 const NOUNS = {
   place: "Places near you",
   destination: "Places to travel",
@@ -34,6 +36,8 @@ export function headingFor(about) {
   if (only.length) parts.push(`${likes.length ? "limited" : "Limited"} to ${joined(only).toLowerCase()}`);
   const avoid = Array.isArray(about?.avoid) ? about.avoid.slice(0, 3) : [];
   if (avoid.length) parts.push(`${parts.length ? "leaving" : "Leaving"} out ${joined(avoid)}`);
+  const years = ageLabel(about?.age);
+  if (years) parts.push(`${parts.length ? "tuned" : "Tuned"} for ages ${years}`);
   return {
     title: NOUNS[about?.kind] ?? "Suggestions",
     because: parts.length ? parts.join(", ") : "Popular rather than personal",
@@ -66,6 +70,7 @@ function becauseLine(because) {
 
 /** One pick, ready to show: a name, a line of facts, why it fits, and where to look it up. */
 export function describePick(item, about) {
+  const tags = (item.tags ?? []).filter((tag) => !/^place$/i.test(String(tag).trim())).slice(0, 3).join(" · ");
   const meta = [item.distance, item.price, Number.isFinite(item.rating) ? `${item.rating} stars` : undefined].filter(Boolean);
   return {
     name: item.name,
@@ -76,8 +81,13 @@ export function describePick(item, about) {
     why: item.fit ? `${capital(item.fit)} for you` : "",
     because: becauseLine(item.because),
     // "Place" is a generic tag Qloo puts on many places; it says nothing, so it is not shown.
-    tags: (item.tags ?? []).filter((tag) => !/^place$/i.test(String(tag).trim())).slice(0, 3).join(" · "),
+    tags,
     mapUrl: mapUrl(item, about),
+    // What Qloo itself said about this pick, each line labelled on the screen under "Qloo says".
+    fitScore: Number.isFinite(item.fitScore) ? `Fit score ${item.fitScore.toFixed(2)} out of 1` : "",
+    description: typeof item.description === "string" ? item.description : "",
+    knownFor: Array.isArray(item.knownFor) && item.knownFor.length ? `Known for: ${item.knownFor.slice(0, 3).join(", ")}` : "",
+    qlooTags: tags ? `Qloo tags: ${tags}` : "",
   };
 }
 
@@ -105,6 +115,7 @@ export function madeLines(made) {
     const took = `(${counted(q.requests, "recommendation request")})`;
     qloo = matched.length ? `Qloo matched ${joined(matched)}, then picked these ${took}.` : `Qloo picked these ${took}, with no taste of yours to go on.`;
     if (q.avoided > 0) qloo += ` It left out ${counted(q.avoided, "thing")} you dislike.`;
+    if (ageLabel(q.age)) qloo += ` It also used your age range (${ageLabel(q.age)}).`;
   }
 
   let claude = `${modelName(made.model)} chose what to ask Qloo and wrote the answer.`;

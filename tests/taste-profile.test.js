@@ -9,9 +9,10 @@ globalThis.localStorage = {
   removeItem: (key) => data.delete(key),
 };
 
-const { mergeLearned, tasteForRequest, summarizeTaste, DEMO_TASTE, TASTE_KINDS } = await import("../public/js/taste.js");
-const { getTaste, saveTaste, clearTaste } = await import("../public/js/storage.js");
+const { mergeLearned, tasteForRequest, summarizeTaste, DEMO_TASTE, TASTE_KINDS, AGE_CHOICES, ageLabel, FOOD_CHOICES, addPick, removePick, mixSuggestions, intakeToTaste } = await import("../public/js/taste.js");
+const { getTaste, saveTaste, clearTaste, getAge, saveAge, clearAge } = await import("../public/js/storage.js");
 const { TASTE_KINDS: SERVER_KINDS } = await import("../server/taste.js");
+const { AGE_RANGES } = await import("../server/qloo.js");
 
 test.beforeEach(() => {
   data = new Map();
@@ -98,4 +99,79 @@ test("damaged storage means Nion knows nothing yet, not a crash", () => {
   assert.deepEqual(getTaste(), []);
   data.set("nion.taste", '{"not":"a list"}');
   assert.deepEqual(getTaste(), []);
+});
+
+// ---------- the "tell Nion what you love" box: choices, picks and age ----------
+
+test("the age choices on the page are exactly the ranges Qloo understands", () => {
+  assert.deepEqual(AGE_CHOICES.map((choice) => choice.value), AGE_RANGES);
+  assert.equal(ageLabel("36_to_55"), "36 to 55");
+  assert.equal(ageLabel("35_and_younger"), "35 or younger");
+  assert.equal(ageLabel("ancient"), undefined);
+  assert.equal(ageLabel(undefined), undefined);
+});
+
+test("the foods offered are ones Nion can use", () => {
+  assert.ok(FOOD_CHOICES.length >= 4 && FOOD_CHOICES.length <= 8);
+  assert.ok(FOOD_CHOICES.every((food) => /^[a-z ]{3,20}$/.test(food)));
+});
+
+test("a pick is added once, in order, up to a limit, and can be taken out", () => {
+  let list = [];
+  list = addPick(list, { name: "Radiohead", kind: "artist" });
+  list = addPick(list, { name: "  radiohead ", kind: "artist" });
+  assert.equal(list.length, 1, "a repeat is ignored, however it is cased");
+  list = addPick(list, { name: "Beck", kind: "artist" });
+  list = addPick(list, { name: "Bjork", kind: "artist" });
+  list = addPick(list, { name: "Prince", kind: "artist" });
+  assert.deepEqual(list.map((p) => p.name), ["Radiohead", "Beck", "Bjork"], "only three");
+  assert.deepEqual(removePick(list, { name: "BECK", kind: "artist" }).map((p) => p.name), ["Radiohead", "Bjork"]);
+  assert.deepEqual(addPick(list, { name: "  " }), list, "an empty name is ignored");
+  assert.deepEqual(addPick(undefined, { name: "x", kind: "movie" }), [{ name: "x", kind: "movie" }]);
+});
+
+test("films and shows take turns in the suggestions, without repeats", () => {
+  const movies = [{ name: "Blade Runner 2049", kind: "movie" }, { name: "Blade Runner", kind: "movie" }, { name: "Blade", kind: "movie" }];
+  const shows = [{ name: "Black Mirror", kind: "tv_show" }, { name: "Blade Runner", kind: "movie" }];
+  const mixed = mixSuggestions([movies, shows], 4);
+  assert.deepEqual(mixed.map((m) => m.name), ["Blade Runner 2049", "Black Mirror", "Blade Runner", "Blade"]);
+  assert.deepEqual(mixSuggestions([[], undefined], 5), []);
+  assert.equal(mixSuggestions([movies], 2).length, 2);
+});
+
+test("what is picked in the box becomes tastes Nion keeps, with the right kinds", () => {
+  const taste = intakeToTaste({
+    artists: [{ name: "Radiohead", kind: "artist" }],
+    shows: [{ name: "Blade Runner 2049", kind: "movie" }, { name: "Black Mirror", kind: "tv_show" }],
+    foods: ["ramen"],
+  });
+  assert.deepEqual(taste, [
+    { name: "Radiohead", kind: "artist", opinion: "like" },
+    { name: "Blade Runner 2049", kind: "movie", opinion: "like" },
+    { name: "Black Mirror", kind: "tv_show", opinion: "like" },
+    { name: "ramen", kind: "food", opinion: "like" },
+  ]);
+  assert.deepEqual(intakeToTaste({}), []);
+  assert.deepEqual(intakeToTaste(), []);
+});
+
+test("the taste line adds the age range only when one was given", () => {
+  const items = mergeLearned([], [{ name: "Radiohead", kind: "artist", opinion: "like" }]);
+  assert.equal(summarizeTaste(items, 3, "36_to_55"), "Your taste: Radiohead · ages 36 to 55");
+  assert.equal(summarizeTaste(items, 3), "Your taste: Radiohead");
+  assert.equal(summarizeTaste(items, 3, "ancient"), "Your taste: Radiohead");
+  assert.equal(summarizeTaste([], 3, "36_to_55"), "Nion doesn't know your taste yet.");
+});
+
+test("an age range is saved on this device, and only one of the three ranges is", () => {
+  assert.equal(getAge(), undefined);
+  saveAge("55_and_older");
+  assert.equal(getAge(), "55_and_older");
+  saveAge("ancient");
+  assert.equal(getAge(), undefined, "an unknown range removes it");
+  saveAge("36_to_55");
+  clearAge();
+  assert.equal(getAge(), undefined);
+  data.set("nion.age", "tampered");
+  assert.equal(getAge(), undefined, "a damaged value is not used");
 });

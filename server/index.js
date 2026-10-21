@@ -31,7 +31,7 @@ if (!process.env.QLOO_API_KEY) {
 
 // Loaded after the key checks so a missing key gives the messages above.
 const { createBrain, currentModel } = await import("./brain.js");
-const { createQloo } = await import("./qloo.js");
+const { createQloo, AGE_RANGES } = await import("./qloo.js");
 const { resolvePlace, geocodePlace, describePlace, cleanPlacePart } = await import("./place.js");
 const { cleanTaste } = await import("./taste.js");
 const { classifyFailure } = await import("./failure.js");
@@ -57,11 +57,20 @@ const visitors = createVisitorLimiter({
 // A looser limit by network address, in case someone skips the page and calls the server directly.
 const addresses = createVisitorLimiter({ perMinute: 60, perHour: numberFromEnv(process.env.NION_IP_PER_HOUR, 300) });
 const gate = createGate(numberFromEnv(process.env.NION_MAX_IN_FLIGHT, 6));
+// The "tell Nion what you love" box asks Qloo for suggestions as someone types. Each one uses a Qloo call (the
+// monthly allowance is 10,000), so it has its own limits, and the page waits for a pause in typing before asking.
+const suggestVisitors = createVisitorLimiter({
+  perMinute: numberFromEnv(process.env.NION_SUGGEST_PER_MINUTE, 40),
+  perHour: numberFromEnv(process.env.NION_SUGGEST_PER_HOUR, 300),
+});
+const suggestAddresses = createVisitorLimiter({ perMinute: 60, perHour: numberFromEnv(process.env.NION_SUGGEST_IP_PER_HOUR, 600) });
 const QLOO_RESERVE = numberFromEnv(process.env.NION_QLOO_RESERVE, 150); // stop asking Qloo when this few calls are left in the month
 let restingUntil = 0; // set when Claude reports that the credit has run out or the key is rejected
 setInterval(() => {
   visitors.sweep();
   addresses.sweep();
+  suggestVisitors.sweep();
+  suggestAddresses.sweep();
 }, 10 * 60_000).unref();
 
 // Why Nion is "resting" right now, or null if it is not.
@@ -141,6 +150,8 @@ function cleanContext(raw = {}) {
     isNewConversation: raw.isNewConversation === true,
     // What the person has said they like. Checked item by item, because it ends up in Nion's instructions.
     taste: cleanTaste(raw.taste),
+    // Their age range, only if they chose to give one, and only one of Qloo's own ranges.
+    age: AGE_RANGES.includes(raw.age) ? raw.age : undefined,
   };
 }
 
@@ -171,6 +182,36 @@ async function resolveLocation(raw) {
   }
   return null;
 }
+
+// Suggestions for the "tell Nion what you love" box: real Qloo matches for what has been typed so far, as names only.
+// Only the sorts of thing that box asks for are allowed, and when Qloo's allowance is low it simply offers none.
+const SUGGEST_KINDS = new Set(["artist", "movie", "tv_show"]);
+app.get("/api/suggest", async (req, res) => {
+  const kind = typeof req.query.kind === "string" ? req.query.kind : "";
+  const text = typeof req.query.q === "string" ? req.query.q.replace(/\s+/g, " ").trim().slice(0, 60) : "";
+  if (!SUGGEST_KINDS.has(kind) || text.length < 2) return res.json({ suggestions: [] });
+
+  const left = qloo.quota().monthRemaining;
+  if (left !== undefined && left < QLOO_RESERVE) return res.json({ suggestions: [] });
+
+  const visitor = cleanVisitorId(req.get("x-nion-visitor")) ?? `ip:${req.ip}`;
+  const turn = suggestVisitors.take(visitor);
+  const byAddress = turn.ok ? suggestAddresses.take(req.ip) : turn;
+  if (!byAddress.ok) {
+    res.set("Retry-After", String(byAddress.retryAfterSec));
+    return res.status(429).json({ suggestions: [], reason: "slow-down" });
+  }
+
+  try {
+    const found = await qloo.searchEntities(text, kind, 5);
+    // The short description (a film's year, say) helps tell two apart, but not when it only repeats the name.
+    const extra = (entity) => (entity.detail && entity.detail.toLowerCase() !== entity.name.toLowerCase() ? { detail: entity.detail } : {});
+    res.json({ suggestions: found.slice(0, 5).map((entity) => ({ name: entity.name, kind, ...extra(entity) })) });
+  } catch (error) {
+    console.error("Suggestion lookup failed:", error?.code ?? "", error?.message ?? error);
+    res.json({ suggestions: [] }); // typing never shows an error: it just offers nothing
+  }
+});
 
 app.post("/api/chat", async (req, res) => {
   const { messages, context, location } = req.body ?? {};

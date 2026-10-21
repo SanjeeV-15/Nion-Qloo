@@ -150,5 +150,41 @@ await step("13. A film the person dislikes is left out: films for a Radiohead fa
   return [`first pick without a dislike: ${hidden}`, `with it disliked, picks are: ${out.suggestions.map((p) => p.name).join(" | ")}`, `heading would say: leaving out ${out.about.avoid.join(", ")}`];
 });
 
+await step("14. Search as you type: part of a name finds the real thing (this is what the 'tell Nion what you love' box shows)", async () => {
+  const lines = [];
+  for (const [text, kind] of [["Radioh", "artist"], ["Blade Ru", "movie"], ["Black Mir", "tv_show"]]) {
+    const found = await qloo.searchEntities(text, kind, 5);
+    if (!found.length) throw new Error(`nothing for "${text}"`);
+    lines.push(`"${text}" (${kind}) -> ${found.map((e) => e.name).join(" | ")}`);
+  }
+  return lines;
+});
+
+await step("15. The age range changes what Qloo picks: the same likes near Denver, with each of Qloo's three age ranges", async () => {
+  const likes = [{ name: "Radiohead", kind: "artist" }, { name: "Blade Runner 2049", kind: "movie" }];
+  const lists = {};
+  for (const age of [undefined, "35_and_younger", "36_to_55", "55_and_older"]) {
+    const out = await runAskQloo({ qloo, input: { kind: "place", likes, how_many: 4 }, context: { coords: denver, coordsFrom: "gps", age } });
+    if (!out.suggestions.length) throw new Error(`no places for age ${age}`);
+    lists[age ?? "no age"] = out.suggestions.map((p) => p.name);
+  }
+  const distinct = new Set(Object.values(lists).map((names) => names.join("|"))).size;
+  if (distinct < 3) throw new Error("the age range barely changed the picks");
+  return Object.entries(lists).map(([age, names]) => `${age.padEnd(15)} ${names.join(" | ")}`);
+});
+
+await step("16. What Qloo says about a pick: its score, its own description and what it is known for", async () => {
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place", likes: [{ name: "Radiohead", kind: "artist" }, { name: "Blade Runner 2049", kind: "movie" }] },
+    context: { coords: denver, coordsFrom: "gps", timeZone: "America/Denver" },
+  });
+  const scored = out.suggestions.filter((p) => Number.isFinite(p.fitScore));
+  const described = out.suggestions.filter((p) => p.description);
+  if (!scored.length) throw new Error("no pick had a fit score");
+  if (!described.length) throw new Error("no pick had a description from Qloo");
+  return out.suggestions.map((p) => `${p.name}: fit ${p.fitScore ?? "-"}, ${p.description ? "has Qloo's description" : "no description"}, known for ${p.knownFor?.join(", ") ?? "-"}`);
+});
+
 console.log(failures ? `\n${failures} step(s) failed.` : "\nAll steps worked.");
 process.exit(failures ? 1 : 0);

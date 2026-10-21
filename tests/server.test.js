@@ -614,3 +614,133 @@ test("a real server warms up the demo's lookups by itself, and a question then d
   assert.equal(response.status, 200);
   assert.equal(searches().filter((q) => q === "Radiohead").length, before, "the question reused the warmed lookup instead of asking Qloo again");
 });
+
+
+// ---------- the "tell Nion what you love" box: suggestions from Qloo, and the age range ----------
+
+const qlooSearch = (url) =>
+  url.pathname === "/search"
+    ? {
+        success: true,
+        results: [
+          { entity_id: "A1", name: "Radiohead", disambiguation: "Radiohead" },
+          { entity_id: "A2", name: "Radio Havanna" },
+          { entity_id: "M1", name: "Blade Runner 2049", disambiguation: "2017" },
+        ],
+      }
+    : { success: true, results: [] };
+
+async function startWithQloo(handler, extraEnv = {}) {
+  const qloo = await pretendService(handler);
+  const port = await freePort();
+  const { child, output } = startServer(
+    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", QLOO_BASE_URL: qloo.url, ...extraEnv },
+    port
+  );
+  await waitFor(() => /Nion is running/.test(output()));
+  return { qloo, child, base: `http://127.0.0.1:${port}` };
+}
+
+test("the suggestion route gives names from Qloo for the box, and drops a detail that only repeats the name", async () => {
+  const { qloo, child, base } = await startWithQloo(qlooSearch);
+  try {
+    const response = await fetch(`${base}/api/suggest?kind=artist&q=Radioh`);
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.deepEqual(data.suggestions[0], { name: "Radiohead", kind: "artist" }, "no repeated detail");
+    assert.deepEqual(data.suggestions[2], { name: "Blade Runner 2049", kind: "artist", detail: "2017" }, "a real detail is kept");
+    const search = qloo.seen.find((call) => call.url.pathname === "/search").url.searchParams;
+    assert.equal(search.get("query"), "Radioh");
+    assert.equal(search.get("types"), "urn:entity:artist");
+  } finally {
+    child.kill();
+    qloo.server.close();
+  }
+});
+
+test("the suggestion route refuses other kinds and tiny or missing text without asking Qloo", async () => {
+  const { qloo, child, base } = await startWithQloo(qlooSearch);
+  try {
+    for (const query of ["kind=place&q=ramen", "kind=artist&q=R", "kind=artist", "q=Radiohead", "kind=artist&q=%20%20", "kind=brand&q=Nike"]) {
+      const response = await fetch(`${base}/api/suggest?${query}`);
+      assert.equal(response.status, 200, query);
+      assert.deepEqual((await response.json()).suggestions, [], query);
+    }
+    assert.equal(qloo.seen.length, 0, "Qloo was never asked");
+  } finally {
+    child.kill();
+    qloo.server.close();
+  }
+});
+
+test("typing is limited per visitor, so the box cannot use up Qloo's monthly calls", async () => {
+  const { qloo, child, base } = await startWithQloo(qlooSearch, { NION_SUGGEST_PER_MINUTE: "2" });
+  try {
+    const ask = (id) => fetch(`${base}/api/suggest?kind=artist&q=Radioh`, { headers: { "X-Nion-Visitor": id } });
+    const visitor = "11111111-1111-4111-8111-111111111111";
+    const other = "22222222-2222-4222-8222-222222222222";
+    assert.equal((await ask(visitor)).status, 200);
+    assert.equal((await ask(visitor)).status, 200);
+    const third = await ask(visitor);
+    assert.equal(third.status, 429);
+    assert.ok(Number(third.headers.get("retry-after")) >= 1);
+    assert.deepEqual((await third.json()).suggestions, []);
+    assert.equal((await ask(other)).status, 200, "another visitor is not affected");
+  } finally {
+    child.kill();
+    qloo.server.close();
+  }
+});
+
+test("when Qloo fails, typing offers nothing and shows no error", async () => {
+  const qloo = await pretendService(() => ({ error: "down" }), { status: () => 500 });
+  const port = await freePort();
+  const { child, output } = startServer(
+    { ANTHROPIC_API_KEY: "sk-ant-not-a-real-key", QLOO_API_KEY: "qloo-not-a-real-key", QLOO_BASE_URL: qloo.url },
+    port
+  );
+  try {
+    await waitFor(() => /Nion is running/.test(output()));
+    const response = await fetch(`http://127.0.0.1:${port}/api/suggest?kind=artist&q=Radioh`);
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).suggestions, []);
+  } finally {
+    child.kill();
+    qloo.server.close();
+  }
+});
+
+test("the person's age range reaches Qloo as a signal, and only one of Qloo's own ranges is accepted", async () => {
+  for (const [age, expected] of [["36_to_55", "36_to_55"], ["ancient", null], [undefined, null]]) {
+    const claude = await pretendService(claudeThatAsksForPlaces());
+    const qloo = await pretendService(qlooAnswer);
+    const port = await freePort();
+    const { child, output } = startServer(
+      {
+        ANTHROPIC_API_KEY: "sk-ant-not-a-real-key",
+        QLOO_API_KEY: "qloo-not-a-real-key",
+        ANTHROPIC_BASE_URL: claude.url,
+        QLOO_BASE_URL: qloo.url,
+        NOMINATIM_URL: "http://127.0.0.1:1",
+      },
+      port
+    );
+    try {
+      await waitFor(() => /Nion is running/.test(output()));
+      const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "where should I eat?" }], context: { age }, location: { text: "Lisbon" } }),
+      });
+      assert.equal(response.status, 200);
+      const data = await response.json();
+      const insights = qloo.seen.find((call) => call.url.pathname === "/v2/insights").url.searchParams;
+      assert.equal(insights.get("signal.demographics.age"), expected, `age ${age}`);
+      assert.equal(data.about.age, expected ?? undefined, "the screen is told when the age range was used");
+      assert.equal(data.made.qloo.age, expected ?? undefined);
+    } finally {
+      child.kill();
+      for (const service of [claude, qloo]) service.server.close();
+    }
+  }
+});
