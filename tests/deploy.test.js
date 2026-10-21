@@ -86,6 +86,22 @@ test("the page offers a few things to try, each a real question the app can answ
   assert.match(html, /role="group" aria-label="Things to try"/);
 });
 
+test("the first thing to do sits right under the examples, and the picks have a place for who did what", () => {
+  const html = read("public/index.html");
+  assert.equal((html.match(/id="demo-taste"/g) ?? []).length, 1, "one demo-taste button");
+  assert.ok(html.indexOf('id="chips"') < html.indexOf('id="demo-taste"'), "after the examples");
+  assert.ok(html.indexOf('id="demo-taste"') < html.indexOf('id="reply-card"'), "before the answer, so it is seen first");
+  assert.match(html, /<section id="start-here"[^>]*>[\s\S]*id="demo-taste"[\s\S]*<\/section>/, "inside the start panel");
+  const picks = html.slice(html.indexOf('id="picks"'), html.indexOf("</section>", html.indexOf('id="picks"')));
+  assert.match(picks, /id="picks-made-qloo"/);
+  assert.match(picks, /id="picks-made-claude"/);
+  // Every one of these is looked up by the page script, so none can be renamed in one place only.
+  const app = read("public/js/app.js");
+  for (const id of ["start-here", "start-steps", "picks-made-qloo", "picks-made-claude", "demo-taste"]) {
+    assert.match(app, new RegExp(`getElementById\\("${id}"\\)`), `${id} is used by app.js`);
+  }
+});
+
 test("the 'where are you?' buttons are hidden until Nion asks, and each one is something Nion accepts as a place", () => {
   const html = read("public/index.html");
   const start = html.indexOf('id="place-chips"');

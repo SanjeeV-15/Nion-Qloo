@@ -80,3 +80,36 @@ export function describePick(item, about) {
     mapUrl: mapUrl(item, about),
   };
 }
+
+/** "claude-haiku-5-5" becomes "Claude Haiku 5.5". Anything else is shown as it is. */
+export function modelName(id) {
+  const match = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(typeof id === "string" ? id : "");
+  if (match) return `Claude ${capital(match[1])} ${match[2]}.${match[3]}`;
+  return typeof id === "string" && id.trim() ? id.trim() : "Claude";
+}
+
+const counted = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * Who did what for these picks, in two plain sentences. `made` is { model, qloo, searches } from the server and
+ * every number in it is real: what Qloo matched, how many requests it took, and any web searches. Returns
+ * { qloo, claude } (a part is an empty string when the server did not say), or null when there is nothing to say.
+ */
+export function madeLines(made) {
+  if (!made || typeof made !== "object") return null;
+
+  let qloo = "";
+  const q = made.qloo;
+  if (q && Number.isFinite(q.requests) && q.requests > 0) {
+    const matched = [q.likes > 0 ? counted(q.likes, "like") : "", q.tags > 0 ? counted(q.tags, "tag") : ""].filter(Boolean);
+    const took = `(${counted(q.requests, "recommendation request")})`;
+    qloo = matched.length ? `Qloo matched ${joined(matched)}, then picked these ${took}.` : `Qloo picked these ${took}, with no taste of yours to go on.`;
+    if (q.avoided > 0) qloo += ` It left out ${counted(q.avoided, "thing")} you dislike.`;
+  }
+
+  let claude = `${modelName(made.model)} chose what to ask Qloo and wrote the answer.`;
+  if (Number.isFinite(made.searches) && made.searches > 0) {
+    claude += ` It also searched the web ${made.searches === 1 ? "once" : `${made.searches} times`}.`;
+  }
+  return { qloo, claude };
+}

@@ -1097,6 +1097,53 @@ test("each pick shows its opening hours, as text, when they are known", async ()
   assert.ok(!lines(cards[2]).some((t) => /^open until|^open 24|^closed now/i.test(t)), "a place with no hours claims nothing");
 });
 
+test("under the picks, the screen says what Qloo did and which model wrote the answer, from the server's own numbers", async () => {
+  await startApp({ voice: false });
+  await typeIn("what would I like in Lisbon");
+  fetches[0].respond({
+    reply: "Try the museum.",
+    suggestions: [{ name: "Museum" }],
+    about: { kind: "place", likes: ["Radiohead"], only: [], avoid: [] },
+    made: { model: "claude-haiku-5-5", qloo: { likes: 2, tags: 1, avoided: 0, requests: 1 }, searches: 0 },
+  });
+  await tick();
+  assert.equal(elements["picks-made-qloo"].textContent, "Qloo matched 2 likes and 1 tag, then picked these (1 recommendation request).");
+  assert.equal(elements["picks-made-claude"].textContent, "Claude Haiku 5.5 chose what to ask Qloo and wrote the answer.");
+});
+
+test("when the server sent nothing about who did what, the screen claims nothing", async () => {
+  await startApp({ voice: false });
+  await typeIn("what would I like in Lisbon");
+  fetches[0].respond({ reply: "Try the museum.", suggestions: [{ name: "Museum" }], about: { kind: "place", likes: [], only: [], avoid: [] } });
+  await tick();
+  assert.equal(elements["picks-made-qloo"].textContent, "");
+  assert.equal(elements["picks-made-claude"].textContent, "");
+});
+
+test("the demo-taste panel shows until Nion knows a taste, and its steps fold away once something is answered", async () => {
+  await startApp({ voice: false });
+  assert.equal(elements["start-here"].hidden, false, "shown to someone Nion knows nothing about");
+  assert.equal(elements["start-steps"].hidden, false, "with its three steps, before anything is asked");
+
+  await typeIn("I'm hungry");
+  fetches[0].respond({ reply: "What kind of food do you love?" });
+  await tick();
+  assert.equal(elements["start-steps"].hidden, true, "the steps fold away once there is an answer");
+  assert.equal(elements["start-here"].hidden, false, "but the demo button is still there");
+  assert.equal(elements["start-here"].dataset.folded, "yes");
+
+  elements["demo-taste"].handlers.click();
+  assert.equal(elements["start-here"].hidden, true, "gone once Nion knows a taste");
+});
+
+test("someone who already has a taste never sees the panel", async () => {
+  await startApp({ voice: false });
+  elements["demo-taste"].handlers.click();
+  assert.equal(elements["start-here"].hidden, true);
+  elements["forget-taste"].handlers.click();
+  assert.equal(elements["start-here"].hidden, false, "it comes back if they forget their taste");
+});
+
 // ---------- the shorter first-picks path ----------
 
 test("when Nion needs a location, one-tap place buttons appear, and a tap answers it", async () => {

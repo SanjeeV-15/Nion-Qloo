@@ -270,6 +270,10 @@ test("a city the person says is found on the map, so Qloo looks near it", async 
     // The screen's list has the pick, with no made-up distance.
     assert.equal(data.suggestions[0].name, "Cervejaria Test");
     assert.equal(data.suggestions[0].distance, undefined);
+
+    // The screen is told who did what: the model that really answered, and what Qloo really did.
+    assert.equal(data.made.model, claude.seen[0].body.model);
+    assert.ok(data.made.qloo.requests >= 1);
   } finally {
     child.kill();
     for (const service of [claude, qloo, osm]) service.server.close();

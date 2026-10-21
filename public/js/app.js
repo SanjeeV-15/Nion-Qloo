@@ -19,7 +19,7 @@ import { createListener, speechInSupported } from "./speech-in.js";
 import { speak, stopSpeaking, speechOutSupported } from "./speech-out.js";
 import { getName, setName, clearName, clearConversations, recordExchange, getTaste, saveTaste, clearTaste, getVisitorId } from "./storage.js";
 import { DEMO_TASTE, mergeLearned, tasteForRequest, summarizeTaste } from "./taste.js";
-import { headingFor, describePick } from "./picks.js";
+import { headingFor, describePick, madeLines } from "./picks.js";
 import { showState } from "./ui.js";
 import { geolocationPermission, getDevicePosition } from "./location.js";
 
@@ -35,6 +35,8 @@ const el = {
   stop: document.getElementById("stop"),
   tasteLine: document.getElementById("taste-line"),
   demoTaste: document.getElementById("demo-taste"),
+  startHere: document.getElementById("start-here"),
+  startSteps: document.getElementById("start-steps"),
   forgetTaste: document.getElementById("forget-taste"),
   chips: document.getElementById("chips"),
   placeChips: document.getElementById("place-chips"),
@@ -47,6 +49,8 @@ const el = {
   picksTitle: document.getElementById("picks-title"),
   picksBecause: document.getElementById("picks-because"),
   picksList: document.getElementById("picks-list"),
+  picksMadeQloo: document.getElementById("picks-made-qloo"),
+  picksMadeClaude: document.getElementById("picks-made-claude"),
 };
 
 const params = new URLSearchParams(location.search);
@@ -88,6 +92,15 @@ function renderTaste() {
   const hasTaste = items.length > 0;
   el.demoTaste.hidden = hasTaste;
   el.forgetTaste.hidden = !hasTaste;
+  updateStartHere();
+}
+// The "try it in three steps" panel is for someone who has not told Nion anything yet. Once a reply is on the
+// screen the steps fold away, but the demo-taste button stays until Nion knows a taste.
+function updateStartHere() {
+  el.startHere.hidden = getTaste().length > 0;
+  const folded = Boolean(el.reply.textContent); // is there an answer on the screen?
+  el.startSteps.hidden = folded;
+  el.startHere.dataset.folded = folded ? "yes" : ""; // folded: just the button, without the box around it
 }
 el.demoTaste.addEventListener("click", () => {
   saveTaste(DEMO_TASTE);
@@ -256,11 +269,12 @@ function showReply(text, question) {
   if (question !== undefined) el.youSaid.textContent = question ? `You: ${question}` : "";
   el.reply.textContent = text;
   el.replyCard.hidden = !text;
+  updateStartHere();
 }
 
 // The quiet list under what Nion said. Every word came from outside, so it is put on the page
 // as text only, never as HTML.
-function renderPicks(suggestions, about) {
+function renderPicks(suggestions, about, made) {
   el.picksList.replaceChildren();
   const picks = Array.isArray(suggestions) ? suggestions.slice(0, 5) : [];
   el.picks.hidden = picks.length === 0;
@@ -269,6 +283,10 @@ function renderPicks(suggestions, about) {
   const heading = headingFor(about);
   el.picksTitle.textContent = heading.title;
   el.picksBecause.textContent = heading.because;
+  // Who did what for these picks: what Qloo did, and what the model did.
+  const lines = madeLines(made);
+  el.picksMadeQloo.textContent = lines?.qloo ?? "";
+  el.picksMadeClaude.textContent = lines?.claude ?? "";
 
   for (const item of picks) {
     const pick = describePick(item, about);
@@ -731,7 +749,7 @@ async function ask(question, oneShot, gps) {
     }
 
     const { reply } = data;
-    renderPicks(data.suggestions, data.about); // appears as Nion starts to speak
+    renderPicks(data.suggestions, data.about, data.made); // appears as Nion starts to speak
     if (data.place) known.place = data.place; // worked out from GPS: remember it
     // The person said something about their taste: keep it for next time.
     if (Array.isArray(data.learned) && data.learned.length > 0) {

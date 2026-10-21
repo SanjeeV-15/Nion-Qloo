@@ -779,3 +779,37 @@ test("asking for more passes the offset to Qloo, and a bad offset is ignored or 
   await runAskQloo({ qloo, input: { kind: "movie" }, context: {} });
   assert.deepEqual(qloo.asked.recommend.map((r) => r.offset), [3, 20, 0, 0, 0]);
 });
+
+// ---------- what Qloo did, counted for the screen ----------
+
+test("the answer counts what Qloo matched and how many recommendation requests it took", async () => {
+  const qloo = pretendQloo({
+    entities: { Radiohead: "ART-1" },
+    tags: { jazz: [{ id: "urn:tag:genre:media:jazz", name: "Jazz" }] },
+  });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "movie", likes: [{ name: "Radiohead", kind: "artist" }, { name: "Nobody Known", kind: "artist" }], tastes: ["jazz"] },
+  });
+  assert.deepEqual(out.stats, { likes: 1, tags: 1, avoided: 0, requests: 1 }, "a name Qloo does not know is not counted");
+});
+
+test("a dislike that was left out is counted, and a wider search counts as another request", async () => {
+  const qloo = pretendQloo({
+    tags: { horror: [{ id: "urn:tag:genre:media:horror", name: "Horror" }] },
+    results: ({ radiusM }) => (radiusM > 5000 ? [entity()] : []),
+  });
+  const out = await runAskQloo({
+    qloo,
+    input: { kind: "place" },
+    context: { coords: denver, dislikes: [{ name: "horror", kind: "genre" }] },
+  });
+  assert.equal(out.stats.avoided, 1);
+  assert.equal(out.stats.requests, 2, "the close search was empty, so it searched wider");
+  assert.equal(out.stats.requests, qloo.asked.recommend.length, "the count is the requests really sent");
+});
+
+test("with no taste at all, nothing is claimed as matched", async () => {
+  const out = await runAskQloo({ qloo: pretendQloo(), input: { kind: "place" }, context: { coords: denver } });
+  assert.deepEqual(out.stats, { likes: 0, tags: 0, avoided: 0, requests: 1 });
+});

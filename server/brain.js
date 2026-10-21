@@ -59,6 +59,7 @@ export function createBrain({ client, qloo, geocode = geocodePlace, model: defau
     let outputTokens = 0;
     let suggestions = [];
     let about = null;
+    let qlooStats = null; // what Qloo did for the picks that were kept (see runAskQloo)
     const learned = [];
     const sources = new Map();
     const errors = [];
@@ -119,6 +120,7 @@ export function createBrain({ client, qloo, geocode = geocodePlace, model: defau
           if (outcome.suggestions.length > 0) {
             suggestions = outcome.suggestions;
             about = outcome.about ?? null;
+            qlooStats = outcome.stats ?? null;
           }
           results.push({ type: "tool_result", tool_use_id: block.id, content: outcome.text, ...(outcome.isError ? { is_error: true } : {}) });
         }
@@ -166,6 +168,8 @@ export function createBrain({ client, qloo, geocode = geocodePlace, model: defau
       sources: [...sources.values()].slice(0, 8),
       suggestions: spoken,
       about: spoken.length ? about : null,
+      // Who did what, for the line under the picks: which model wrote the answer, what Qloo did, any web searches.
+      made: spoken.length ? { model, qloo: qlooStats, searches } : null,
       learned,
       searches,
       usage,

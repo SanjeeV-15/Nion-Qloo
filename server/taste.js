@@ -511,8 +511,10 @@ export async function runAskQloo({ qloo, input, context = {} }) {
     // Ask for a few extra places: Qloo can list one place twice, and if "open now" was asked for, some of the
     // closest may be closed. The list is cut back to the number wanted below.
     const fetchCount = kind === "place" ? (wantOpen ? 10 : take + 3) : take;
-    const ask = (radiusM) =>
-      qloo.recommend({
+    let requests = 0; // recommendation requests actually sent to Qloo for this answer (the screen says how many)
+    const ask = (radiusM) => {
+      requests += 1;
+      return qloo.recommend({
         kind,
         entityIds,
         tagIds,
@@ -526,6 +528,7 @@ export async function runAskQloo({ qloo, input, context = {} }) {
         radiusM,
         take: fetchCount,
       });
+    };
 
     const firstRadius = coordsFrom === "named" ? NAMED_PLACE_RADIUS_M : NEAR_RADIUS_M;
     let found = await ask(firstRadius);
@@ -600,7 +603,10 @@ export async function runAskQloo({ qloo, input, context = {} }) {
 
     // What these picks were based on, so the screen can say so honestly.
     const about = { kind, likes: [...likeNames, ...tasteNames], only: onlyNames, avoid: avoidNames };
-    return { text, suggestions, about, isError: false };
+    // What Qloo did for this answer, so the screen can say so with real numbers: how many of the person's likes and
+    // tags it matched, how many things it left out, and how many recommendation requests it took.
+    const stats = { likes: likeNames.length, tags: tagIds.length + filterTagIds.length, avoided: avoidNames.length, requests };
+    return { text, suggestions, about, stats, isError: false };
   } catch (error) {
     if (error instanceof QlooError) {
       const hint =

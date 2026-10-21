@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { headingFor, describePick } from "../public/js/picks.js";
+import { headingFor, describePick, madeLines, modelName } from "../public/js/picks.js";
 
 const pick = {
   name: "Sample Noodle Bar",
@@ -106,4 +106,33 @@ test("a card shows when the place is open or closed, only when that is known", (
 test("Qloo's generic 'Place' tag is not shown, but other tags are", () => {
   const card = describePick({ ...pick, tags: ["Place", "Convenience stop", "place", "Credit cards", "Outdoor seating"] }, { kind: "place" });
   assert.equal(card.tags, "Convenience stop · Credit cards · Outdoor seating");
+});
+
+// ---------- who did what ----------
+
+test("a model id is shown as a name a person would say", () => {
+  assert.equal(modelName("claude-haiku-5-5"), "Claude Haiku 5.5");
+  assert.equal(modelName("claude-sonnet-5-5"), "Claude Sonnet 5.5");
+  assert.equal(modelName("some-other-model"), "some-other-model", "an id it does not know is shown as it is");
+  assert.equal(modelName(undefined), "Claude");
+});
+
+test("the line under the picks says what Qloo matched and what the model did, with the real numbers", () => {
+  const lines = madeLines({ model: "claude-haiku-5-5", qloo: { likes: 2, tags: 1, avoided: 1, requests: 1 }, searches: 0 });
+  assert.equal(lines.qloo, "Qloo matched 2 likes and 1 tag, then picked these (1 recommendation request). It left out 1 thing you dislike.");
+  assert.equal(lines.claude, "Claude Haiku 5.5 chose what to ask Qloo and wrote the answer.");
+});
+
+test("with no taste to go on, it says so rather than claiming a match", () => {
+  const lines = madeLines({ model: "claude-haiku-5-5", qloo: { likes: 0, tags: 0, avoided: 0, requests: 2 }, searches: 1 });
+  assert.equal(lines.qloo, "Qloo picked these (2 recommendation requests), with no taste of yours to go on.");
+  assert.match(lines.claude, /It also searched the web once\.$/);
+  assert.match(madeLines({ model: "claude-haiku-5-5", qloo: null, searches: 3 }).claude, /searched the web 3 times/);
+  assert.equal(madeLines({ model: "claude-haiku-5-5", qloo: null, searches: 0 }).qloo, "", "no Qloo numbers means no Qloo claim");
+});
+
+test("nothing is said when the server sent nothing", () => {
+  assert.equal(madeLines(null), null);
+  assert.equal(madeLines(undefined), null);
+  assert.equal(madeLines("text"), null);
 });

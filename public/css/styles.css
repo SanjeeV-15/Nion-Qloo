@@ -409,6 +409,22 @@ main > * {
   color: var(--ink-faint);
 }
 
+/* Who did what for these picks: what Qloo did and what the model did. Quiet, but readable. */
+.picks-made {
+  margin: 12px 0 0;
+}
+
+.picks-made p {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+
+.picks-made p:empty {
+  display: none;
+}
+
 .picks-list {
   display: grid;
   gap: 8px;
@@ -669,4 +685,41 @@ main.history {
 .sources,
 .heard {
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- the first thing to do: a demo taste, with three short steps ---------- */
+.start-here {
+  margin: 16px 0 0;
+  padding: 12px 16px 14px;
+  text-align: center;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: 16px;
+}
+
+.start-title {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.start-list {
+  margin: 0 0 10px;
+  padding: 0 0 0 1.3em;
+  text-align: left;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.start-list b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Once something has been asked, the steps fold away and only the button is left. */
+.start-here[data-folded="yes"] {
+  padding: 0;
+  background: none;
+  border: 0;
 }

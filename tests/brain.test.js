@@ -300,3 +300,23 @@ test("what the person said they dislike is handed to Qloo to leave out", async (
   assert.deepEqual(asked[0].excludeEntityIds, ["ID-Moon"]);
   assert.deepEqual(result.about.avoid, ["Moon"]);
 });
+
+test("the answer says which model wrote it and what Qloo did, for the line under the picks", async () => {
+  const { client, requests } = pretendClaude([
+    askQloo({ kind: "movie", likes: [{ name: "Radiohead", kind: "artist" }] }),
+    done("Try Noodle House."),
+  ]);
+  const result = await ask(createBrain({ client, qloo: pretendQloo({ results: [entity({ kind: "movie" })] }) }));
+  assert.equal(result.made.model, requests[0].model, "the model that was really used");
+  assert.deepEqual(result.made.qloo, { likes: 1, tags: 0, avoided: 0, requests: 1 });
+  assert.equal(result.made.searches, 0);
+});
+
+test("there is nothing to say about who did what when no picks are listed", async () => {
+  const { client } = pretendClaude([askQloo({ kind: "place" }), done("Nothing here is really your style. Want me to try something else?")]);
+  const none = await ask(createBrain({ client, qloo: pretendQloo() }), { coords: { lat: 39.7, lon: -105 } });
+  assert.equal(none.made, null);
+
+  const plain = pretendClaude([done("Hi there.")]);
+  assert.equal((await ask(createBrain({ client: plain.client, qloo: pretendQloo() }))).made, null);
+});

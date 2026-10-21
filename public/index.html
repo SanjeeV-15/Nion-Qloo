@@ -67,6 +67,20 @@
       <button class="chip" type="button" data-say="What would I like in Lisbon?">What would I like in Lisbon?</button>
     </div>
 
+    <!-- The first thing to do, right under the examples: load a demo taste so the picks are personal. It shows
+         while Nion knows nothing about the person; the three steps fold away once they have asked something. -->
+    <section id="start-here" class="start-here" aria-label="How to try Nion">
+      <div id="start-steps">
+        <p class="start-title">New here? Try it in three steps</p>
+        <ol class="start-list">
+          <li>Tap <b>Use a demo taste</b> so Nion knows what you like.</li>
+          <li>Tap an example above, or ask out loud or by typing.</li>
+          <li>Read the picks, and see what Qloo and Claude each did.</li>
+        </ol>
+      </div>
+      <button id="demo-taste" class="pill small" type="button">Use a demo taste</button>
+    </section>
+
     <div id="reply-card" class="reply-card" hidden>
       <p id="you-said" class="you-said"></p>
       <p id="reply" class="reply" aria-live="polite"></p>
@@ -86,6 +100,11 @@
       <h2 id="picks-title" class="picks-title"></h2>
       <p id="picks-because" class="picks-because"></p>
       <ol id="picks-list" class="picks-list"></ol>
+      <!-- Who did what for these picks, with the real numbers from the server. Filled in by app.js, as text only. -->
+      <div class="picks-made">
+        <p id="picks-made-qloo"></p>
+        <p id="picks-made-claude"></p>
+      </div>
     </section>
 
     <!-- What Nion knows about the person's taste. It only learns what they say; the demo
@@ -93,7 +112,6 @@
     <div class="taste">
       <p id="taste-line" class="taste-line" aria-live="polite">Nion doesn't know your taste yet.</p>
       <div class="taste-actions">
-        <button id="demo-taste" class="pill small" type="button">Use a demo taste</button>
         <button id="forget-taste" class="pill small" type="button" hidden>Forget my taste</button>
       </div>
     </div>
