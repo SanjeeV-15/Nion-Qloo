@@ -21,6 +21,25 @@ const cache = new Map();
 const geocodeCache = new Map();
 let nextSlot = 0;
 
+// The three cities the page offers as one-tap buttons (and the warm-up loads). If the map service cannot be reached
+// (it can refuse a busy shared host such as the one Nion runs on), these still work, so the first thing a visitor
+// taps is never "I can't find that on my map". Keep this in step with the buttons in public/index.html.
+const SAMPLE_CITIES = {
+  "new york": { lat: 40.7128, lon: -74.006, city: "New York", region: "New York", country: "US" },
+  "new york city": { lat: 40.7128, lon: -74.006, city: "New York", region: "New York", country: "US" },
+  lisbon: { lat: 38.7077507, lon: -9.1365919, city: "Lisbon", region: "Lisbon", country: "PT" },
+  lisboa: { lat: 38.7077507, lon: -9.1365919, city: "Lisbon", region: "Lisbon", country: "PT" },
+  tokyo: { lat: 35.6762, lon: 139.6503, city: "Tokyo", region: "Tokyo", country: "JP" },
+};
+// After the map service fails, sample cities skip it for a while instead of waiting for it to fail again.
+const OUTAGE_MS = 10 * 60_000;
+let mapDownUntil = 0;
+
+/** For tests: forget that the map service was down. */
+export function resetMapOutage() {
+  mapDownUntil = 0;
+}
+
 // Takes the next free slot, at least 1.1 seconds after the last one. Slots are reserved before
 // waiting, so two lookups arriving together do not both go at once.
 async function politeWait(sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) {
@@ -160,6 +179,9 @@ export async function geocodePlace(text, { fetchImpl = fetch, sleep } = {}) {
 
   const key = query.toLowerCase();
   if (geocodeCache.has(key)) return geocodeCache.get(key);
+  // "Lisbon, Portugal" is the sample city Lisbon.
+  const builtIn = SAMPLE_CITIES[key.split(",")[0].trim()];
+  if (builtIn && Date.now() < mapDownUntil) return { ...builtIn };
 
   let place = null;
   try {
@@ -173,7 +195,8 @@ export async function geocodePlace(text, { fetchImpl = fetch, sleep } = {}) {
     place = placeFromSearch(await response.json());
   } catch (error) {
     console.error("Place search (OpenStreetMap) failed:", error?.message ?? error);
-    return null; // not remembered: it may work next time
+    mapDownUntil = Date.now() + OUTAGE_MS;
+    return builtIn ? { ...builtIn } : null; // not remembered: it may work next time
   }
 
   // A search that found nothing is remembered too, so a made-up place is not looked up again and again.

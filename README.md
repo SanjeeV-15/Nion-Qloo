@@ -75,7 +75,7 @@ Browser page  --- what you say or type, your taste list, your place --->  Node s
 - Claude turns what you say into a request for Qloo (names are looked up to get Qloo's IDs, then recommendations are
   asked for near a point on the map, with your likes as signals, your dislikes excluded, and Qloo's explanation of each
   pick when two or more likes are blended), and turns the results into a short spoken answer.
-- A place you say or type is found on the map with OpenStreetMap, so Qloo can look near it.
+- A place you say or type is found on the map with OpenStreetMap, so Qloo can look near it. The three sample cities on the page (New York, Lisbon, Tokyo) are also built in, so they still work if OpenStreetMap cannot be reached.
 - Whether a place is open is worked out from the opening hours Qloo returns, using the local time at the place
   (found from its coordinates with [tz-lookup](https://github.com/photostructure/tz-lookup), public domain).
 - When there is no cuisine filter, ratings count in how places are ranked (Qloo's `bias.quality`); a place Qloo lists

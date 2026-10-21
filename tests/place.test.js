@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { placeFromNominatim, parsePlaceLine, describePlace, cleanPlacePart, placeFromSearch, geocodePlace } from "../server/place.js";
+import { placeFromNominatim, parsePlaceLine, describePlace, cleanPlacePart, placeFromSearch, geocodePlace, resetMapOutage } from "../server/place.js";
 
 test("reads a place from OpenStreetMap's answer, including the neighbourhood", () => {
   const answer = {
@@ -87,6 +87,46 @@ test("a place that could not be found is remembered as not found", async () => {
   assert.equal(await geocodePlace("Nowhereville Xyzzy", options), null);
   assert.equal(await geocodePlace("Nowhereville Xyzzy", options), null);
   assert.equal(calls.length, 1);
+});
+
+test("when the map service cannot be reached, the sample cities on the page still work", async () => {
+  resetMapOutage();
+  const down = pretendNominatim(new TypeError("fetch failed"));
+  const lisbonPlace = await geocodePlace("Lisbon", down);
+  assert.equal(lisbonPlace.city, "Lisbon");
+  assert.ok(Math.abs(lisbonPlace.lat - 38.7) < 0.2 && Math.abs(lisbonPlace.lon + 9.1) < 0.2);
+  assert.equal((await geocodePlace("Lisbon, Portugal", down)).city, "Lisbon", "with a country after it");
+  assert.equal((await geocodePlace("new york", down)).city, "New York");
+  assert.equal((await geocodePlace("Tokyo", down)).country, "JP");
+  resetMapOutage();
+});
+
+test("a city that is not built in is still not found when the map service is down", async () => {
+  resetMapOutage();
+  assert.equal(await geocodePlace("Smalltown Qwerty", pretendNominatim(new TypeError("fetch failed"))), null);
+  resetMapOutage();
+});
+
+test("after the map service fails, sample cities do not wait for it again, and it is tried again later", async () => {
+  resetMapOutage();
+  const down = pretendNominatim(new TypeError("fetch failed"));
+  await geocodePlace("Lisbon", down);
+  assert.equal(down.calls.length, 1, "the first lookup tried the service");
+  await geocodePlace("Tokyo", down);
+  assert.equal(down.calls.length, 1, "the next sample city went straight to the built-in answer");
+  resetMapOutage();
+  const up = pretendNominatim([{ lat: "35.68", lon: "139.76", name: "Tokyo", address: { city: "Tokyo", country_code: "jp" } }]);
+  await geocodePlace("Tokyo, Japan", up); // a name that is not a built-in key, so it must use the service
+  assert.equal(up.calls.length, 1);
+  resetMapOutage();
+});
+
+test("a sample city is looked up normally while the map service works", async () => {
+  resetMapOutage();
+  const up = pretendNominatim(lisbon);
+  const place = await geocodePlace("Lisbon", up);
+  assert.equal(up.calls.length, 1, "the service is used first");
+  assert.equal(place.lat, 38.7077507);
 });
 
 test("a failed lookup is not remembered, so it can work next time", async () => {

@@ -280,6 +280,41 @@ test("a city the person says is found on the map, so Qloo looks near it", async 
   }
 });
 
+
+test("with the map service unreachable, a sample city still works end to end", async () => {
+  const claude = await pretendService(claudeThatAsksForPlaces());
+  const qloo = await pretendService(qlooAnswer);
+  const port = await freePort();
+  const { child, output } = startServer(
+    {
+      ANTHROPIC_API_KEY: "sk-ant-not-a-real-key",
+      QLOO_API_KEY: "qloo-not-a-real-key",
+      ANTHROPIC_BASE_URL: claude.url,
+      QLOO_BASE_URL: qloo.url,
+      NOMINATIM_URL: "http://127.0.0.1:1", // nothing is listening here: the map service is down
+    },
+    port
+  );
+  try {
+    await waitFor(() => /Nion is running/.test(output()));
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "where should I eat?" }], context: {}, location: { text: "Lisbon" } }),
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    // Qloo was still asked about the middle of Lisbon, from the built-in answer.
+    const insights = qloo.seen.find((call) => call.url.pathname === "/v2/insights").url.searchParams;
+    assert.equal(insights.get("filter.location"), "POINT(-9.13659 38.70775)");
+    assert.equal(data.suggestions[0].name, "Cervejaria Test");
+    assert.match(claude.seen[0].body.system, /The person is in Lisbon/);
+  } finally {
+    child.kill();
+    for (const service of [claude, qloo]) service.server.close();
+  }
+});
+
 test("if the map lookup is down, the person still gets an answer, using web search for local places", async () => {
   const claude = await pretendService(claudeThatAsksForPlaces());
   const qloo = await pretendService(qlooAnswer);
