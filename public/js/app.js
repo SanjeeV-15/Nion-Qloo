@@ -27,6 +27,7 @@ import { geolocationPermission, getDevicePosition } from "./location.js";
 const el = {
   start: document.getElementById("start"),
   convo: document.getElementById("convo"),
+  off: document.getElementById("off"),
   status: document.getElementById("status"),
   heard: document.getElementById("heard"),
   problem: document.getElementById("problem"),
@@ -136,6 +137,8 @@ const intake = createIntake({
     showOptions: document.getElementById("intake-show-options"),
     showPicked: document.getElementById("intake-show-picked"),
     foods: document.getElementById("intake-foods"),
+    musicGenres: document.getElementById("intake-music-genres"),
+    screenGenres: document.getElementById("intake-screen-genres"),
     ages: document.getElementById("intake-ages"),
     start: el.intakeStart,
   },
@@ -261,7 +264,8 @@ function statusText() {
       if (session.awaiting === "place") return "Listening for where you are…";
       return "Listening…";
     case "thinking": return "Thinking…";
-    case "speaking": return "Speaking…";
+    // On laptop speakers the microphone hears Nion's own voice, so talking over it often does not work: say how to cut in.
+    case "speaking": return voiceActive ? "Speaking… tap Stop or the circle to cut in." : "Speaking…";
   }
 }
 
@@ -291,6 +295,8 @@ function handleProblem(reason) {
     voiceActive = false;
     setState("off");
     el.start.hidden = false;
+    el.convo.hidden = true;
+    el.off.hidden = true;
     showProblem("Nion can't use the microphone. Allow it in Chrome's address bar, then tap the button again.");
   } else if (reason === "network") {
     showProblem("Chrome's speech recognition needs an internet connection.");
@@ -911,6 +917,7 @@ el.start.addEventListener("click", async () => {
   }
   el.start.hidden = true;
   el.convo.hidden = false;
+  el.off.hidden = false;
   showProblem("");
   voiceActive = true;
   listener.start();
@@ -923,6 +930,30 @@ el.start.addEventListener("click", async () => {
     setState("waiting");
   }
 });
+
+// Turns the microphone off completely, so Nion stops listening for "Hey Nion". Anything it was saying or looking up is
+// dropped, and a started conversation ends quietly. "Turn on Nion" brings it back. Typing still works meanwhile.
+function turnOff() {
+  if (!voiceActive) return;
+  turn += 1;
+  abortAsk?.abort();
+  stopSpeaking();
+  clearTimeout(followUpTimer);
+  locating = false;
+  pending = null;
+  session.active = false;
+  session.followUp = false;
+  session.awaiting = null;
+  refreshConvoButton();
+  listener.stop();
+  voiceActive = false;
+  setState("off");
+  el.start.hidden = false;
+  el.convo.hidden = true;
+  el.off.hidden = true;
+  trace("mic", "turned off");
+}
+el.off.addEventListener("click", turnOff);
 
 // A browser without speech can still type to Nion. Only talking needs Chrome.
 if (!speechInSupported || !speechOutSupported) {

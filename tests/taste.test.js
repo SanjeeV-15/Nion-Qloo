@@ -850,3 +850,12 @@ test("Qloo's own score, description and known-for go to the screen, and its desc
   assert.deepEqual(pick.knownFor, ["Tonkotsu Ramen", "Gyoza"]);
   assert.match(out.text, /Qloo says: A cosy noodle bar with a late-night crowd\./);
 });
+
+test("the styles a visitor taps on the card survive the server's cleaning, hyphen and space included", () => {
+  const kept = cleanTaste([
+    { name: "sci-fi", kind: "genre", opinion: "like" },
+    { name: "hip hop", kind: "genre", opinion: "like" },
+    { name: "jazz", kind: "genre", opinion: "like" },
+  ]);
+  assert.deepEqual(kept.map((t) => t.name), ["sci-fi", "hip hop", "jazz"]);
+});

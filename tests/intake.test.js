@@ -37,8 +37,8 @@ function element() {
 // Builds the box. `answers` maps "kind|text" to the suggestions the pretend service gives.
 function setup({ answers = {}, fail = false } = {}) {
   const el = {
-    artistInput: element(), artistOptions: element(), artistPicked: element(),
-    showInput: element(), showOptions: element(), showPicked: element(),
+    artistInput: element(), artistOptions: element(), artistPicked: element(), musicGenres: element(),
+    showInput: element(), showOptions: element(), showPicked: element(), screenGenres: element(),
     foods: element(), ages: element(), start: element(),
   };
   const requests = [];
@@ -171,8 +171,8 @@ test("a show is kept as a show and a film as a film", async () => {
 test("a slow old answer never replaces a newer one", async () => {
   const pending = [];
   const el = {
-    artistInput: element(), artistOptions: element(), artistPicked: element(),
-    showInput: element(), showOptions: element(), showPicked: element(),
+    artistInput: element(), artistOptions: element(), artistPicked: element(), musicGenres: element(),
+    showInput: element(), showOptions: element(), showPicked: element(), screenGenres: element(),
     foods: element(), ages: element(), start: element(),
   };
   const timers = [];
@@ -281,4 +281,32 @@ test("words from Qloo are put on the page as text, never as markup", async () =>
   const button = t.options("artist").children[0].children[0];
   assert.equal(button.textContent, '<img src=x onerror="alert(1)">');
   assert.equal("innerHTML" in button, false, "it never touches innerHTML");
+});
+
+test("music styles and kinds of show can be tapped, become genre tastes, and are enough on their own to start", () => {
+  const t = setup();
+  const music = t.el.musicGenres.children;
+  const screen = t.el.screenGenres.children;
+  assert.deepEqual(music.map((b) => b.textContent), ["pop", "hip hop", "jazz", "electronic", "indie", "classical", "metal"]);
+  assert.deepEqual(screen.map((b) => b.textContent), ["comedy", "sci-fi", "drama", "thriller", "documentary", "animation"]);
+  assert.equal(t.el.start.disabled, true);
+  music[1].click(); // hip hop
+  screen[1].click(); // sci-fi
+  music[1].click(); // hip hop off again
+  assert.equal(music[1].dataset.on, "");
+  assert.equal(screen[1].dataset.on, "yes");
+  assert.equal(t.el.start.disabled, false, "a style alone is a taste");
+  t.el.start.click();
+  assert.deepEqual(t.started[0].taste, [{ name: "sci-fi", kind: "genre", opinion: "like" }]);
+});
+
+test("reset clears the tapped styles too", () => {
+  const t = setup();
+  t.el.musicGenres.children[0].click();
+  t.el.screenGenres.children[2].click();
+  t.intake.reset();
+  assert.equal(t.el.musicGenres.children[0].dataset.on, "");
+  assert.equal(t.el.screenGenres.children[2].dataset.on, "");
+  assert.equal(t.el.start.disabled, true);
+  assert.deepEqual(t.intake.state.genres, []);
 });

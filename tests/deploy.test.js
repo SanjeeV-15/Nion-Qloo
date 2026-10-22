@@ -97,7 +97,8 @@ test("the first thing to do sits right under the examples, and the picks have a 
   assert.match(picks, /id="picks-made-claude"/);
   // Every one of these is looked up by the page script, so none can be renamed in one place only.
   const app = read("public/js/app.js");
-  for (const id of ["start-here", "start-steps", "picks-made-qloo", "picks-made-claude", "demo-taste"]) {
+  assert.match(html, /id="off"[^>]*hidden/, "Turn off Nion starts hidden, until Nion is on");
+  for (const id of ["start-here", "start-steps", "picks-made-qloo", "picks-made-claude", "demo-taste", "off", "intake-music-genres", "intake-screen-genres"]) {
     assert.match(app, new RegExp(`getElementById\\("${id}"\\)`), `${id} is used by app.js`);
   }
 });

@@ -8,18 +8,18 @@
 // The page's elements are passed in (and so are `make`, `fetchImpl` and the timers), so this can be tested
 // without a browser. Every word that comes from Qloo is put on the page as text, never as HTML.
 
-import { addPick, removePick, mixSuggestions, intakeToTaste, AGE_CHOICES, FOOD_CHOICES } from "./taste.js";
+import { addPick, removePick, mixSuggestions, intakeToTaste, AGE_CHOICES, FOOD_CHOICES, MUSIC_GENRES, SCREEN_GENRES } from "./taste.js";
 
 const MIN_CHARS = 2; // ask Qloo for suggestions only once there is something to go on
 const PAUSE_MS = 300; // ...and only when the person pauses typing, to save Qloo's calls
 const MAX_PER_FIELD = 3;
 
 /**
- * el: { artistInput, artistOptions, artistPicked, showInput, showOptions, showPicked, foods, ages, start }
+ * el: { artistInput, artistOptions, artistPicked, musicGenres, showInput, showOptions, showPicked, screenGenres, foods, ages, start }
  * onStart({ taste, age }) is called when the person presses "Start with my taste".
  */
 export function createIntake({ el, make, fetchImpl, visitorId, onStart, schedule = setTimeout, cancel = clearTimeout }) {
-  const state = { artists: [], shows: [], foods: [], age: undefined };
+  const state = { artists: [], shows: [], genres: [], foods: [], age: undefined };
 
   const fields = {
     artist: { input: el.artistInput, options: el.artistOptions, picked: el.artistPicked, kinds: ["artist"], list: "artists" },
@@ -124,19 +124,26 @@ export function createIntake({ el, make, fetchImpl, visitorId, onStart, schedule
     });
   }
 
-  // ----- foods (tap any) and age range (tap one, or none) -----
-  const foodButtons = FOOD_CHOICES.map((food) => {
-    const node = button(food, "chip", () => {
-      state.foods = state.foods.includes(food) ? state.foods.filter((f) => f !== food) : [...state.foods, food];
-      node.setAttribute("aria-pressed", String(state.foods.includes(food)));
-      node.dataset.on = state.foods.includes(food) ? "yes" : "";
-      updateStart();
+  // ----- words to tap (any number): foods, music styles, kinds of film or show; and the age range (one, or none) -----
+  // A row of words. Each tap switches that word on or off in state[key].
+  function toggleRow(container, choices, key) {
+    const buttons = choices.map((word) => {
+      const node = button(word, "chip", () => {
+        const on = !state[key].includes(word);
+        state[key] = on ? [...state[key], word] : state[key].filter((w) => w !== word);
+        node.setAttribute("aria-pressed", String(on));
+        node.dataset.on = on ? "yes" : "";
+        updateStart();
+      });
+      node.setAttribute("aria-pressed", "false");
+      return node;
     });
-    node.setAttribute("aria-pressed", "false");
-    return node;
-  });
-  el.foods.replaceChildren();
-  el.foods.append(...foodButtons);
+    container.replaceChildren();
+    container.append(...buttons);
+    return buttons;
+  }
+  const foodButtons = toggleRow(el.foods, FOOD_CHOICES, "foods");
+  const styleButtons = [...toggleRow(el.musicGenres, MUSIC_GENRES, "genres"), ...toggleRow(el.screenGenres, SCREEN_GENRES, "genres")];
 
   const ageOptions = [{ value: undefined, label: "Prefer not to say" }, ...AGE_CHOICES];
   const ageButtons = ageOptions.map((choice) => {
@@ -167,6 +174,7 @@ export function createIntake({ el, make, fetchImpl, visitorId, onStart, schedule
     reset() {
       state.artists = [];
       state.shows = [];
+      state.genres = [];
       state.foods = [];
       state.age = undefined;
       for (const name of Object.keys(fields)) {
@@ -174,7 +182,7 @@ export function createIntake({ el, make, fetchImpl, visitorId, onStart, schedule
         renderOptions(name, []);
         renderPicked(name);
       }
-      foodButtons.forEach((node) => {
+      [...foodButtons, ...styleButtons].forEach((node) => {
         node.setAttribute("aria-pressed", "false");
         node.dataset.on = "";
       });

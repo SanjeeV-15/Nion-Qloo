@@ -1260,6 +1260,66 @@ test("each pick has a labelled 'Qloo says' block with Qloo's own score, words an
   assert.equal(elements["picks-because"].textContent, "Because you like Radiohead, tuned for ages 36 to 55");
 });
 
+// ---------- turning Nion off, and how to cut in on speakers ----------
+
+test("'Turn off Nion' stops the microphone and puts the page back to the start; 'Turn on' brings it back", async () => {
+  await startApp({ name: "Sanjeev" });
+  assert.equal(elements.off.hidden, false, "shown once Nion is on");
+  assert.equal(elements.start.hidden, true);
+  let micStopped = false;
+  FakeRecognition.last.abort = () => (micStopped = true);
+
+  elements.off.handlers.click();
+  assert.equal(micStopped, true, "the microphone was stopped");
+  assert.match(status(), /Type a question below/);
+  assert.equal(elements.start.hidden, false);
+  assert.equal(elements.off.hidden, true);
+  assert.equal(elements.convo.hidden, true);
+  assert.equal(elements.stop.hidden, true);
+
+  elements.start.handlers.click();
+  await tick();
+  assert.equal(elements.off.hidden, false);
+  assert.match(status(), /Waiting\. Say/);
+});
+
+test("turning Nion off while it is speaking or thinking drops what it was doing", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion what are some places to eat near me");
+  assert.match(status(), /Thinking/);
+  elements.off.handlers.click();
+  assert.equal(fetches[0].aborted, true, "the question was cancelled");
+  assert.match(status(), /Type a question below/);
+});
+
+test("turning Nion off ends a started conversation quietly", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion let's start a conversation");
+  await tick();
+  assert.match(status(), /In a conversation|Speaking/);
+  const spokenBefore = spoken.length;
+  elements.off.handlers.click();
+  assert.equal(spoken.length, spokenBefore, "nothing more is said");
+  assert.equal(elements.convo.textContent, "Start conversation", "the conversation is over");
+  assert.match(status(), /Type a question below/);
+});
+
+test("while Nion speaks out loud, the status says how to cut in without talking", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion what is the date");
+  fetches[0].reply("It's Sunday.");
+  await tick();
+  assert.match(status(), /Speaking… tap Stop or the circle to cut in\./);
+});
+
+test("with voice off there is nothing to cut in on, so the hint is not shown", async () => {
+  await startApp({ voice: false });
+  await typeIn("what is the date");
+  fetches[0].reply("It's Sunday.");
+  await tick();
+  assert.doesNotMatch(status(), /cut in/);
+});
+
 // ---------- the shorter first-picks path ----------
 
 test("when Nion needs a location, one-tap place buttons appear, and a tap answers it", async () => {

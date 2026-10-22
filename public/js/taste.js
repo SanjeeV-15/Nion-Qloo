@@ -29,6 +29,12 @@ export function ageLabel(value) {
 // Foods to tap in the "tell Nion what you love" box. Nion looks each one up in Qloo when it is used.
 export const FOOD_CHOICES = ["ramen", "tacos", "sushi", "pizza", "burgers", "coffee"];
 
+// Music styles and kinds of film or show to tap. Each is a genre taste, looked up as a Qloo tag when it is used. Only
+// words whose first Qloo tag is a music or media genre are offered: "rock" and "country" are not, because Qloo's first
+// match for them is a place category and a hotel type (checked against real Qloo).
+export const MUSIC_GENRES = ["pop", "hip hop", "jazz", "electronic", "indie", "classical", "metal"];
+export const SCREEN_GENRES = ["comedy", "sci-fi", "drama", "thriller", "documentary", "animation"];
+
 const sameName = (a, b) => a.kind === b.kind && a.name.toLowerCase() === b.name.toLowerCase();
 
 /** Adds a pick to a short list (a repeat is ignored, and only the first `max` are kept). Returns a new list. */
@@ -63,10 +69,11 @@ export function mixSuggestions(lists, max = 5) {
 }
 
 /** What the person picked in the box, as tastes Nion keeps: { name, kind, opinion: "like" }. */
-export function intakeToTaste({ artists = [], shows = [], foods = [] } = {}) {
+export function intakeToTaste({ artists = [], shows = [], genres = [], foods = [] } = {}) {
   return [
     ...artists.map((pick) => ({ name: pick.name, kind: "artist" })),
     ...shows.map((pick) => ({ name: pick.name, kind: pick.kind === "tv_show" ? "tv_show" : "movie" })),
+    ...genres.map((name) => ({ name, kind: "genre" })),
     ...foods.map((name) => ({ name, kind: "food" })),
   ]
     .map(tidy)

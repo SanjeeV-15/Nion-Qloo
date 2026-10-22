@@ -46,6 +46,8 @@
     <div class="actions">
       <button id="start" class="pill" type="button">Turn on Nion</button>
       <button id="convo" class="pill" type="button" hidden>Start conversation</button>
+      <!-- Stops the microphone completely. Without it, once Nion is on there is no way to make it stop listening. -->
+      <button id="off" class="pill" type="button" hidden>Turn off Nion</button>
       <!-- Shown only while Nion is speaking or thinking. Voice can't always cut in over Nion's own
            voice (on laptop speakers the microphone hears both), so this always works. -->
       <button id="stop" class="pill" type="button" aria-label="Stop Nion" hidden>Stop</button>
@@ -80,6 +82,8 @@
           <input id="intake-artist" class="intake-input" type="text" autocomplete="off" maxlength="60" placeholder="Start typing, like Radiohead">
           <ul id="intake-artist-options" class="intake-options" hidden></ul>
           <div id="intake-artist-picked" class="intake-picked"></div>
+          <p class="intake-hint intake-or">Or tap a style you love:</p>
+          <div id="intake-music-genres" class="chips" role="group" aria-label="Music styles you love"></div>
         </div>
 
         <div class="intake-field">
@@ -87,6 +91,8 @@
           <input id="intake-show" class="intake-input" type="text" autocomplete="off" maxlength="60" placeholder="Start typing, like Blade Runner 2049">
           <ul id="intake-show-options" class="intake-options" hidden></ul>
           <div id="intake-show-picked" class="intake-picked"></div>
+          <p class="intake-hint intake-or">Or tap a kind you love:</p>
+          <div id="intake-screen-genres" class="chips" role="group" aria-label="Kinds of films and shows you love"></div>
         </div>
 
         <div class="intake-field">

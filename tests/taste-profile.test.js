@@ -9,7 +9,7 @@ globalThis.localStorage = {
   removeItem: (key) => data.delete(key),
 };
 
-const { mergeLearned, tasteForRequest, summarizeTaste, DEMO_TASTE, TASTE_KINDS, AGE_CHOICES, ageLabel, FOOD_CHOICES, addPick, removePick, mixSuggestions, intakeToTaste } = await import("../public/js/taste.js");
+const { mergeLearned, tasteForRequest, summarizeTaste, DEMO_TASTE, TASTE_KINDS, AGE_CHOICES, ageLabel, FOOD_CHOICES, MUSIC_GENRES, SCREEN_GENRES, addPick, removePick, mixSuggestions, intakeToTaste } = await import("../public/js/taste.js");
 const { getTaste, saveTaste, clearTaste, getAge, saveAge, clearAge } = await import("../public/js/storage.js");
 const { TASTE_KINDS: SERVER_KINDS } = await import("../server/taste.js");
 const { AGE_RANGES } = await import("../server/qloo.js");
@@ -174,4 +174,18 @@ test("an age range is saved on this device, and only one of the three ranges is"
   assert.equal(getAge(), undefined);
   data.set("nion.age", "tampered");
   assert.equal(getAge(), undefined, "a damaged value is not used");
+});
+
+test("the styles offered are short words Nion can look up, and leave out the ones Qloo maps to something else", () => {
+  for (const list of [MUSIC_GENRES, SCREEN_GENRES]) {
+    assert.ok(list.length >= 4 && list.length <= 8);
+    assert.ok(list.every((word) => /^[a-z][a-z -]{1,20}$/.test(word)), list.join(", "));
+  }
+  // Checked against real Qloo: its first tag for "rock" is a place category and for "country" a hotel type.
+  assert.ok(!MUSIC_GENRES.includes("rock") && !MUSIC_GENRES.includes("country"));
+});
+
+test("tapped styles become genre tastes, between the named picks and the foods", () => {
+  const taste = intakeToTaste({ artists: [{ name: "Radiohead", kind: "artist" }], genres: ["jazz", "sci-fi"], foods: ["ramen"] });
+  assert.deepEqual(taste.map((t) => [t.name, t.kind]), [["Radiohead", "artist"], ["jazz", "genre"], ["sci-fi", "genre"], ["ramen", "food"]]);
 });

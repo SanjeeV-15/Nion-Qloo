@@ -853,3 +853,8 @@ main.history {
   padding-left: 8px;
   border-left: 2px solid var(--glass-edge);
 }
+
+/* "Or tap a style you love", under the typed picks. */
+.intake-or {
+  margin-top: 8px;
+}
