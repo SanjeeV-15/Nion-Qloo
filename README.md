@@ -56,7 +56,8 @@ that opens a map search. When you have given Nion two or more things you like, e
 breakdown of how much each one drove it. Things you have said you dislike are sent to Qloo to leave out, and the list
 says what was left out. Under each pick, a **Qloo says** block shows what Qloo itself returned: its fit score, its own one-line description, which of your likes drove the pick (with the shares), what a place is known for, and its tags. A **Tell Nion what you love** card, just under the typing box, lets a new visitor pick a few artists, films or shows (Qloo suggests real matches as they type), tap music styles and kinds of film or show, a food, and, only if they want, an age range, so Qloo reacts to their own taste from the first question; all of it is optional, and "Use a demo taste" skips it. Four suggestions under the typing box can be tapped to try Nion, and when Nion needs to know where you are, so can "Use my location" and three sample cities. **Stop** (or Escape, or
 tapping the circle) cuts Nion off, and the screen says so while Nion speaks, because on laptop speakers the microphone hears
-Nion's own voice and talking over it often does not work. **Turn off Nion** stops the microphone altogether. A started conversation or a quick follow-up (within 15 seconds of an answer) needs
+Nion's own voice and talking over it often does not work. With earphones in, the microphone does not hear Nion, so talking
+over it works and Nion stops and listens. **Turn off Nion** stops the microphone altogether. A started conversation or a quick follow-up (within 15 seconds of an answer) needs
 no wake phrase.
 
 ## How it works
