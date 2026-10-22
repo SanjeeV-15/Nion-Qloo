@@ -57,18 +57,20 @@ export function isEcho(heard, spoken) {
 }
 
 // Words people say to stop Nion. One of these is enough.
-const STOP_WORDS = new Set(["wait", "stop", "hold", "pause", "hang", "cancel", "sorry", "actually"]);
+const STOP_WORDS = new Set(["wait", "stop", "hold", "pause", "hang", "cancel", "sorry", "actually", "never", "nevermind"]);
 
 /**
- * True if what was heard looks like a person interrupting Nion: a stop word, or
- * at least two words that Nion was not saying. A single odd word is more likely
- * Chrome mishearing Nion's own voice, so that does not count.
+ * True if what was heard looks like a person interrupting Nion: a stop word, or at least `minFresh` words that
+ * Nion was not saying. A single odd word is more likely Chrome mishearing Nion's own voice, so that does not
+ * count. For a phrase Chrome has not finished yet (an interim result) the caller asks for three, because even
+ * with earphones in a faint leak of Nion's voice reaches the microphone, and Chrome's half-heard guesses at it
+ * are garbled words that match nothing: two of those used to be enough to make Nion cut itself off mid-sentence.
  */
-export function isInterruption(heard, spoken) {
+export function isInterruption(heard, spoken, { minFresh = 2 } = {}) {
   const spokenWords = words(spoken);
   const fresh = words(heard).filter((w) => !matchesSpoken(w, spokenWords));
   if (fresh.some((w) => STOP_WORDS.has(w))) return true;
-  return fresh.length >= 2;
+  return fresh.length >= minFresh;
 }
 
 /**

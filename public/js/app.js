@@ -448,7 +448,9 @@ function handleInterim(text) {
   if (debugOn) el.heard.textContent = `Hearing: “${text}”`;
   const busy = state === "speaking" || state === "thinking";
   if (locating) return; // waiting for the browser's location pop-up
-  const interrupting = busy && isInterruption(text, echo.text);
+  // An unfinished phrase needs three words that are not Nion's own before it counts: Chrome's half-heard
+  // guesses at a faint leak of Nion's voice (even through earphones) are often two garbled words.
+  const interrupting = busy && isInterruption(text, echo.text, { minFresh: 3 });
   if (text !== lastInterim) {
     lastInterim = text;
     trace("interim", `“${text}”${busy ? (interrupting ? " (someone is talking)" : " (not an interruption yet: too short, or Nion's own words)") : ""}`);

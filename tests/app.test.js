@@ -726,6 +726,26 @@ test("a single stray word heard while Nion is talking does not cut it off", asyn
   assert.equal(fetches.length, 2);
 });
 
+test("two garbled words half-heard while Nion is talking do not cut it off, but a real phrase does", async () => {
+  await startApp({ name: "Sanjeev" });
+  await hear("hey nion what are some places to eat near me");
+  fetches[0].reply("Here are five places. Mizumi Ramen is affordable Japanese. Cafe Rio is cheap Mexican.");
+  await tick();
+  const speakingBefore = pending.length;
+  assert.ok(speakingBefore > 0, "Nion is speaking");
+
+  // With earphones in, a faint leak of Nion's voice reaches the microphone; Chrome's unfinished guess at it is
+  // a couple of words that match nothing Nion said.
+  await hear("brett cuffs", { final: false });
+  assert.equal(pending.length, speakingBefore, "still speaking");
+  assert.match(status(), /Speaking/);
+
+  // A person really talking over it is a longer unfinished phrase, or a stop word.
+  await hear("what about Mumbai instead", { final: false });
+  assert.equal(pending.length, 0, "stopped");
+  assert.match(status(), /Listening/);
+});
+
 // The person clicks "Allow" in the browser's location pop-up.
 const clickAllow = () => locationCallbacks.success({ coords: { latitude: 25.7617, longitude: -80.1918 } });
 

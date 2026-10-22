@@ -145,3 +145,11 @@ test("a command is only looked for at the very end, not in the middle of a long 
   const heard = "end the conversation is what you could say and then some more words after it all";
   assert.equal(commandAtEnd(heard, askedForTaste, detectCommand), null);
 });
+
+test("an unfinished phrase can ask for three fresh words, so two garbled words of Nion's own voice do not count", () => {
+  assert.equal(isInterruption("brett cafe", longReply, { minFresh: 3 }), false, "two odd words, half-heard: not an interruption");
+  assert.equal(isInterruption("brett cafe", longReply), true, "the same two words in a finished phrase still count");
+  assert.equal(isInterruption("what about Mumbai please", longReply, { minFresh: 3 }), true, "three real words do");
+  assert.equal(isInterruption("never mind", longReply, { minFresh: 3 }), true, "a stop phrase always does");
+  assert.equal(isInterruption("wait", longReply, { minFresh: 3 }), true);
+});
