@@ -174,3 +174,10 @@ test("a pick with nothing from Qloo to show says nothing under Qloo's name", () 
   assert.equal(card.qlooTags, "");
   assert.equal(describePick({ name: "x", fitScore: "high", knownFor: [] }, { kind: "movie" }).fitScore, "", "a score that is not a number is not shown");
 });
+
+test("a detail that only repeats the name (as Qloo gives for artists) is not shown", () => {
+  assert.equal(describePick({ name: "Beck", detail: "Beck" }, { kind: "artist" }).detail, "");
+  assert.equal(describePick({ name: "Thom Yorke", detail: " thom yorke " }, { kind: "artist" }).detail, "", "however it is spaced or cased");
+  assert.equal(describePick({ name: "Blade Runner 2049", detail: "2017" }, { kind: "movie" }).detail, "2017", "a real detail stays");
+  assert.equal(describePick({ name: "Moon" }, { kind: "movie" }).detail, "");
+});

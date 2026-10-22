@@ -72,9 +72,11 @@ function becauseLine(because) {
 export function describePick(item, about) {
   const tags = (item.tags ?? []).filter((tag) => !/^place$/i.test(String(tag).trim())).slice(0, 3).join(" · ");
   const meta = [item.distance, item.price, Number.isFinite(item.rating) ? `${item.rating} stars` : undefined].filter(Boolean);
+  // For an artist, Qloo's short description is often just the name again: that says nothing, so it is not shown.
+  const detail = typeof item.detail === "string" && item.detail.trim().toLowerCase() !== String(item.name ?? "").trim().toLowerCase() ? item.detail : "";
   return {
     name: item.name,
-    detail: item.detail,
+    detail,
     meta: meta.join(" · "),
     hours: typeof item.hours === "string" ? item.hours : "",
     open: item.open === true,
